@@ -7,9 +7,9 @@ import torch
 from PIL import Image
 sys.path.append('.')
 
-from training.config import get_config
-from training.inference import Inference
-from training.utils import create_logger, print_args
+from mt_training.config import get_config
+from mt_training.inference import Inference
+from mt_training.utils import create_logger, print_args
 
 def main(config, args):
     logger = create_logger(args.save_folder, args.name, 'info', console=True)

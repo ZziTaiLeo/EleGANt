@@ -1,0 +1,147 @@
+{
+    "os": "Linux-5.4.0-135-generic-x86_64-with-glibc2.27",
+    "python": "3.9.13",
+    "heartbeatAt": "2022-12-13T11:16:38.810439",
+    "startedAt": "2022-12-13T11:16:37.161685",
+    "docker": null,
+    "cuda": null,
+    "args": [
+        "--image_path",
+        "/media/pc/hengda1t/hengda/datasets/test_cele/00022.png",
+        "--datajson",
+        "/media/pc/hengda1t/hengda/datasets/test_cele/dataset.json",
+        "--latent_space_type",
+        "w_plus",
+        "--outdir=optimizer",
+        "--network",
+        "../pretrained_models/ffhq512-128.pkl"
+    ],
+    "state": "running",
+    "program": "/media/pc/hengda1t/hengda/e4e_eg3d/eg3d/./run_projector.py",
+    "codePath": "eg3d/run_projector.py",
+    "git": {
+        "remote": "https://github.com/ZziTaiLeo/e4e_eg3d.git",
+        "commit": "d68b16a18d58bc1e0d9410a4920e7d7c07690809"
+    },
+    "email": "601537645@qq.com",
+    "root": "/media/pc/hengda1t/hengda/e4e_eg3d",
+    "host": "ming-3090x4",
+    "username": "pc",
+    "executable": "/home/pc/miniconda3/envs/wyq_eg3d/bin/python",
+    "cpu_count": 10,
+    "cpu_count_logical": 20,
+    "cpu_freq": {
+        "current": 3367.8674499999993,
+        "min": 1200.0,
+        "max": 4560.0
+    },
+    "cpu_freq_per_core": [
+        {
+            "current": 3498.614,
+            "min": 1200.0,
+            "max": 4600.0
+        },
+        {
+            "current": 3507.611,
+            "min": 1200.0,
+            "max": 4500.0
+        },
+        {
+            "current": 3400.34,
+            "min": 1200.0,
+            "max": 4500.0
+        },
+        {
+            "current": 3507.572,
+            "min": 1200.0,
+            "max": 4500.0
+        },
+        {
+            "current": 3237.913,
+            "min": 1200.0,
+            "max": 4600.0
+        },
+        {
+            "current": 3167.599,
+            "min": 1200.0,
+            "max": 4700.0
+        },
+        {
+            "current": 3200.0,
+            "min": 1200.0,
+            "max": 4500.0
+        },
+        {
+            "current": 3413.716,
+            "min": 1200.0,
+            "max": 4700.0
+        },
+        {
+            "current": 3238.605,
+            "min": 1200.0,
+            "max": 4500.0
+        },
+        {
+            "current": 3507.472,
+            "min": 1200.0,
+            "max": 4500.0
+        },
+        {
+            "current": 3498.601,
+            "min": 1200.0,
+            "max": 4600.0
+        },
+        {
+            "current": 3507.439,
+            "min": 1200.0,
+            "max": 4500.0
+        },
+        {
+            "current": 3400.297,
+            "min": 1200.0,
+            "max": 4500.0
+        },
+        {
+            "current": 3507.407,
+            "min": 1200.0,
+            "max": 4500.0
+        },
+        {
+            "current": 3237.286,
+            "min": 1200.0,
+            "max": 4600.0
+        },
+        {
+            "current": 3168.132,
+            "min": 1200.0,
+            "max": 4700.0
+        },
+        {
+            "current": 3199.999,
+            "min": 1200.0,
+            "max": 4500.0
+        },
+        {
+            "current": 3413.492,
+            "min": 1200.0,
+            "max": 4700.0
+        },
+        {
+            "current": 3237.94,
+            "min": 1200.0,
+            "max": 4500.0
+        },
+        {
+            "current": 3507.314,
+            "min": 1200.0,
+            "max": 4500.0
+        }
+    ],
+    "disk": {
+        "total": 456.8854446411133,
+        "used": 321.48055267333984
+    },
+    "memory": {
+        "total": 125.5020523071289
+    }
+}
