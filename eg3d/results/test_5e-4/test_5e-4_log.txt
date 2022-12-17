@@ -1,8 +1,8 @@
-name             : elegant
+name             : test_5e-4
 save_path        : results
 load_folder      : None
 keepon           : False
-gpu              : cuda:2
+gpu              : cuda:3
 batch_size       : 1
 test_batch_size  : 1
 workers          : 4
@@ -26,8 +26,8 @@ reference_latents : /media/pc/hengda1t/hengda/datasets/latents/makeup
 ckpt             : ../pretrained_models/best_model_38w.pt
 is_training      : True
 use_checkpoint   : True
-device           : cuda:2
-save_folder      : results/elegant
+device           : cuda:3
+save_folder      : results/test_5e-4
 DATA:
   BATCH_SIZE: 1
   IMG_SIZE: 512
@@ -89,8 +89,8 @@ TRAINING:
   BETA1: 0.5
   BETA2: 0.999
   DOUBLE_D: False
-  D_LR: 0.0002
-  G_LR: 0.005
+  D_LR: 0.0005
+  G_LR: 0.0005
   LR_DECAY_FACTOR: 0.05
   NUM_EPOCHS: 50
 G, the number of parameters: 30662136

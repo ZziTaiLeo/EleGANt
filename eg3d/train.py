@@ -31,7 +31,7 @@ if __name__ == "__main__":
                         default=None)
     parser.add_argument("--keepon", default=False, action="store_true", help='keep on training')
 
-    parser.add_argument("--gpu", default='1', type=str, help="GPU id to use.")
+    parser.add_argument("--gpu", default='2', type=str, help="GPU id to use.")
 
 
 

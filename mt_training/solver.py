@@ -28,8 +28,7 @@ class Solver():
         # load eg3d decoder
         with dnnlib.util.open_url(self.opts.network_pkl) as f:
             self.G = legacy.load_network_pkl(f)['G_ema'].to(self.device)
-            self.G.train()
- 
+            self.G.eval() 
         if inference:
             self.G.load_state_dict(torch.load(inference, map_location=opts.device))
             self.G = self.G.to(opts.device).eval()
@@ -43,7 +42,6 @@ class Solver():
         with open(self.opts.dataset_json, 'r') as f:
             self.camera_dic = dict(json.load(f)['labels'])
 
-
         # load Makeup Transfer Net
         self.net_farl, self.preprocess_clip, self.fusion = self.load_mt_net()
 
@@ -53,33 +51,14 @@ class Solver():
         # init rec transformer
         self.resize_transformer = transforms.Resize([256, 256])
 
-
-        def load_mt_net(self):
-            print("Loading MT Module... ")
-            net_farl, preprocess_clip = clip.load("ViT-B/16", device=self.device, use_checkpoint=self.use_checkpoint, is_training=self.is_training)
-            net_farl = net_farl.to(self.device)
-            farl_state = torch.load(
-                "../pretrained_models/FaRL-Base-Patch16-LAIONFace20M-ep16.pth")
-            net_farl.load_state_dict(farl_state["state_dict"], strict=False)
-
-            net_farl.train()
-            print('netfarl_stat:',net_farl.training)
-
-            fusion = SimpleSelfCrossTransformer(
-                num_layers=6, style_dim=512, heads=8, num_styles=14, inject_layers=None)
-            fusion = fusion.to(self.device)
-            return net_farl, preprocess_clip, fusion
-
-
-
         self.load_folder = opts.load_folder
         self.save_folder = opts.save_folder
         self.vis_folder = os.path.join(opts.save_folder, 'visualization')
         if not os.path.exists(self.vis_folder):
             os.makedirs(self.vis_folder)
-        self.vis_freq = config.LOG.VIS_FREQ
-        self.save_freq = config.LOG.SAVE_FREQ
-
+        self.vis_freq = config.LOG.VIS_FREQ  # 1 
+        self.save_freq = config.LOG.SAVE_FREQ # 10 
+        self.interval =100
         # Data & PGT
         self.img_size = config.DATA.IMG_SIZE
         self.margins = {'eye':config.PGT.EYE_MARGIN,
@@ -142,7 +121,7 @@ class Solver():
         self.build_model()
         super(Solver, self).__init__()
 
-    def print_network(self, model, name):
+    def print_network(self, model,name):
         num_params = 0
         for p in model.parameters():
             num_params += p.numel()
@@ -174,14 +153,15 @@ class Solver():
         self.vgg = vgg16(pretrained=True)
 
         # Optimizers
-        self.g_optimizer = torch.optim.Adam(self.G.parameters(), self.g_lr, [self.beta1, self.beta2])
+        # self.g_optimizer = torch.optim.Adam(self.G.parameters(), self.g_lr, [self.beta1, self.beta2])
+        self.g_optimizer = self.configure_optimizers() 
         self.d_A_optimizer = torch.optim.Adam(filter(lambda p: p.requires_grad, self.D_A.parameters()), self.d_lr, [self.beta1, self.beta2])
         if self.double_d:
             self.d_B_optimizer = torch.optim.Adam(filter(lambda p: p.requires_grad, self.D_B.parameters()), self.d_lr, [self.beta1, self.beta2])
-        self.g_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(self.g_optimizer, 
-                    T_max=self.num_epochs, eta_min=self.g_lr * self.lr_decay_factor)
-        self.d_A_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(self.d_A_optimizer, 
-                    T_max=self.num_epochs, eta_min=self.d_lr * self.lr_decay_factor)
+        # self.g_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(self.g_optimizer, 
+        #             T_max=self.num_epochs, eta_min=self.g_lr * self.lr_decay_factor)
+        # self.d_A_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(self.d_A_optimizer, 
+        #             T_max=self.num_epochs, eta_min=self.d_lr * self.lr_decay_factor)
         if self.double_d:
             self.d_B_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(self.d_B_optimizer, 
                     T_max=self.num_epochs, eta_min=self.d_lr * self.lr_decay_factor)
@@ -240,6 +220,7 @@ class Solver():
         fusion = SimpleSelfCrossTransformer(
             num_layers=6, style_dim=512, heads=8, num_styles=14, inject_layers=None)
         fusion = fusion.to(self.device)
+        fusion.train()
         return net_farl, preprocess_clip, fusion
 
     # image_r (b,c,h,w)
@@ -249,13 +230,46 @@ class Solver():
         # print('img_synthesis.shape:', img.shape)
         return img
 
+    def configure_optimizers(self):
+        print("Configuring optimizers..")
+
+        farl_layers_conditions = ['transformer.resblocks.9',
+                                  'transformer.resblocks.10', 'transformer.resblocks.11']
+        # TODO  开放net_farl 的后几层
+
+        self.requires_grad(self.net_farl, flag=False,
+                           condition=farl_layers_conditions)
+        # for name, parms in self.net_farl.named_parameters():
+        #     print('fusion: -->name:', name, '-->grad_requirs:',parms.requires_grad, \
+        #     ' -->grad_value:',parms.grad)
+ 
+        params = [
+            {'params': self.net_farl.parameters(), 'lr': self.g_lr},
+            {'params': self.fusion.parameters(), 'lr': self.g_lr},
+            # {'params': [], 'lr': self.g_lr, 'betas':[self.beta1, self.beta2]},
+        ]
+        optimizer = torch.optim.AdamW(params=params)
+        return optimizer
+
+    @staticmethod
+    def requires_grad(model, flag=True, condition=None):
+        for name, parameter in model.named_parameters():
+            for i in range(len(condition)):
+                if condition[i] in name:
+                    parameter.requires_grad = bool(~flag)
+                    break
+                else:
+                    parameter.requires_grad = bool(flag)
+
+
     def train(self, data_loader):
         self.len_dataset = len(data_loader)
         
         for self.epoch in range(1, self.num_epochs + 1):
             self.start_time = time.time()
             loss_tmp = self.get_loss_tmp()
-            self.G.train(); self.D_A.train(); 
+            # self.G.train(); self.D_A.train(); 
+            self.D_A.train(); 
             if self.double_d: self.D_B.train()
             losses_G = []; losses_D_A = []; losses_D_B = []
             
@@ -287,6 +301,12 @@ class Solver():
                     # ================= Generate ================== #
                     fake_A = self.get_syn(s_latent,r_Image,c_s)
                     fake_B = self.get_syn(r_latent,s_Image,c_r)
+
+                    # =========== reconstruct ==========
+
+                    synthesis_img = [self.forward(s_latent[i, :, :, :], c_s[i, :].unsqueeze(
+                        0)) for i in range(self.opts.batch_size)]
+                    synthesis_img = torch.stack(synthesis_img,dim=0).squeeze(dim=1)
 
                     # generate pseudo ground truth
                     pgt_A = self.pgt_maker(image_s, image_r, mask_s_full, mask_r_full, lms_s, lms_r)
@@ -393,9 +413,6 @@ class Solver():
 
 
                     # cycle loss v2
-                    # rec_A = self.G(fake_A, fake_B, mask_s, mask_r, diff_s, diff_r, lms_s, lms_r)
-                    # rec_B = self.G(fake_B, fake_A, mask_r, mask_s, diff_r, diff_s, lms_r, lms_s)
-
                     g_loss_rec_A = self.criterionL1(rec_A, image_s) * self.lambda_A
                     g_loss_rec_B = self.criterionL1(rec_B, image_r) * self.lambda_B
 
@@ -417,6 +434,8 @@ class Solver():
                     g_loss.backward()
                     self.g_optimizer.step()
 
+                    self.print_value(self.net_farl)
+                    self.print_value(self.fusion)
                     # Logging
                     loss_tmp['G-A-loss-adv'] += g_A_loss_adv.item()
                     loss_tmp['G-B-loss-adv'] += g_B_loss_adv.item()
@@ -428,10 +447,16 @@ class Solver():
                     loss_tmp['G-loss-eye-pgt'] += (g_A_eye_loss_pgt + g_B_eye_loss_pgt).item()
                     loss_tmp['G-loss-lip-pgt'] += (g_A_lip_loss_pgt + g_B_lip_loss_pgt).item()
                     loss_tmp['G-loss-pgt'] += (g_A_loss_pgt + g_B_loss_pgt).item()
+                    print('loss_tmp:',loss_tmp)
                     losses_G.append(g_loss.item())
                     pbar.set_description("Epoch: %d, Step: %d, Loss_G: %0.4f, Loss_D_A: %0.4f, Loss_D_B: %0.4f" % \
                                 (self.epoch, step + 1, np.mean(losses_G), np.mean(losses_D_A), np.mean(losses_D_B)))
-
+                    #save the images during a epoch
+                    if (step) % self.interval == 0:
+                        self.vis_train([image_s.detach().cpu(), 
+                                        synthesis_img.detach().cpu(), 
+                                        fake_A.detach().cpu(), 
+                                        pgt_A.detach().cpu()],step=step)
             self.end_time = time.time()
             for k, v in loss_tmp.items():
                 loss_tmp[k] = v / self.len_dataset  
@@ -442,8 +467,8 @@ class Solver():
             self.plot_loss()
 
             # Decay learning rate
-            self.g_scheduler.step()
-            self.d_A_scheduler.step()
+            # self.g_scheduler.step()
+            # self.d_A_scheduler.step()
             if self.double_d:
                 self.d_B_scheduler.step()
 
@@ -455,7 +480,7 @@ class Solver():
                 self.vis_train([image_s.detach().cpu(), 
                                 image_r.detach().cpu(), 
                                 fake_A.detach().cpu(), 
-                                pgt_A.detach().cpu()])
+                                pgt_A.detach().cpu()],step=None)
             #                   rec_A.detach().cpu()])
 
             # Save model checkpoints
@@ -463,6 +488,10 @@ class Solver():
                 self.save_models()
    
 
+    def print_value(self,net):
+            for name, parms in net.named_parameters():
+                print('-->name:', name, '-->grad_requirs:',parms.requires_grad, \
+                ' -->grad_value:',parms.grad)
     def get_loss_tmp(self):
         loss_tmp = {
             'D-A-loss_real':0.0,
@@ -547,10 +576,15 @@ class Solver():
         out = (x + 1) / 2
         return out.clamp(0, 1)
     
-    def vis_train(self, img_train_batch):
+    def vis_train(self, img_train_batch, step=None):
         # saving training results
         img_train_batch = torch.cat(img_train_batch, dim=3)
-        save_path = os.path.join(self.vis_folder, 'epoch_{:d}_fake.png'.format(self.epoch))
+        if step==None:
+            save_path = os.path.join(self.vis_folder, 'epoch_{:d}_fake.png'.format(self.epoch))
+        else:
+            self.img_interval = os.path.join(self.vis_folder,str(self.epoch))
+            os.makedirs(self.img_interval,exist_ok=True)
+            save_path = os.path.join(self.img_interval, 'step_{:d}_fake.png'.format(step))
         vis_image = make_grid(self.de_norm(img_train_batch), 1)
         save_image(vis_image, save_path) #, normalize=True)
 

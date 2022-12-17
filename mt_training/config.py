@@ -24,8 +24,10 @@ _C.DATA.IMG_SIZE = 512
 
 # Training hyper-parameters
 _C.TRAINING = CfgNode()
-_C.TRAINING.G_LR = 2e-4
+_C.TRAINING.G_LR = 5e-3
 _C.TRAINING.D_LR = 2e-4
+# _C.TRAINING.G_LR = 2e-4 #default_lr
+# _C.TRAINING.D_LR = 2e-4 # default_lr
 _C.TRAINING.BETA1 = 0.5
 _C.TRAINING.BETA2 = 0.999
 _C.TRAINING.NUM_EPOCHS = 50
