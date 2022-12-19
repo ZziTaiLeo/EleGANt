@@ -21,6 +21,7 @@ from models.loss import GANLoss, MakeupLoss, ComposePGT, AnnealingComposePGT
 from eg3d import dnnlib
 from eg3d import legacy
 from mt_training.utils import plot_curves
+# torch.autograd.set_detect_anomaly(True) 
 class Solver():
     def __init__(self, config, opts, logger=None, inference=False):
         self.opts = opts
@@ -58,7 +59,7 @@ class Solver():
             os.makedirs(self.vis_folder)
         self.vis_freq = config.LOG.VIS_FREQ  # 1 
         self.save_freq = config.LOG.SAVE_FREQ # 10 
-        self.interval =100
+        self.interval_step = 1
         # Data & PGT
         self.img_size = config.DATA.IMG_SIZE
         self.margins = {'eye':config.PGT.EYE_MARGIN,
@@ -139,7 +140,6 @@ class Solver():
             init.xavier_normal_(m.weight.data, gain=1.0)
 
     def build_model(self):
-        self.G.apply(self.weights_init_xavier)
         self.D_A.apply(self.weights_init_xavier)
         if self.double_d:
             self.D_B.apply(self.weights_init_xavier)
@@ -152,16 +152,17 @@ class Solver():
         self.criterionPGT = MakeupLoss()
         self.vgg = vgg16(pretrained=True)
 
-        # Optimizers
+        # net Optimizers
         # self.g_optimizer = torch.optim.Adam(self.G.parameters(), self.g_lr, [self.beta1, self.beta2])
         self.g_optimizer = self.configure_optimizers() 
+        # D Optimizers
         self.d_A_optimizer = torch.optim.Adam(filter(lambda p: p.requires_grad, self.D_A.parameters()), self.d_lr, [self.beta1, self.beta2])
         if self.double_d:
             self.d_B_optimizer = torch.optim.Adam(filter(lambda p: p.requires_grad, self.D_B.parameters()), self.d_lr, [self.beta1, self.beta2])
-        # self.g_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(self.g_optimizer, 
-        #             T_max=self.num_epochs, eta_min=self.g_lr * self.lr_decay_factor)
-        # self.d_A_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(self.d_A_optimizer, 
-        #             T_max=self.num_epochs, eta_min=self.d_lr * self.lr_decay_factor)
+        self.g_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(self.g_optimizer, 
+                    T_max=self.num_epochs, eta_min=self.g_lr * self.lr_decay_factor)
+        self.d_A_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(self.d_A_optimizer, 
+                    T_max=self.num_epochs, eta_min=self.d_lr * self.lr_decay_factor)
         if self.double_d:
             self.d_B_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(self.d_B_optimizer, 
                     T_max=self.num_epochs, eta_min=self.d_lr * self.lr_decay_factor)
@@ -208,7 +209,7 @@ class Solver():
 
     def load_mt_net(self):
         print("Loading MT Module... ")
-        net_farl, preprocess_clip = clip.load("ViT-B/16", device=self.device, use_checkpoint=self.opts.use_checkpoint, is_training=self.opts.is_training)
+        net_farl, preprocess_clip = clip.load("ViT-B/16", device='cpu', use_checkpoint=self.opts.use_checkpoint, is_training=self.opts.is_training)
         net_farl = net_farl.to(self.device)
         farl_state = torch.load(
             "../pretrained_models/FaRL-Base-Patch16-LAIONFace20M-ep16.pth")
@@ -239,14 +240,10 @@ class Solver():
 
         self.requires_grad(self.net_farl, flag=False,
                            condition=farl_layers_conditions)
-        # for name, parms in self.net_farl.named_parameters():
-        #     print('fusion: -->name:', name, '-->grad_requirs:',parms.requires_grad, \
-        #     ' -->grad_value:',parms.grad)
- 
+
         params = [
-            {'params': self.net_farl.parameters(), 'lr': self.g_lr},
-            {'params': self.fusion.parameters(), 'lr': self.g_lr},
-            # {'params': [], 'lr': self.g_lr, 'betas':[self.beta1, self.beta2]},
+            {'params': self.net_farl.parameters(), 'lr': self.g_lr,'betas':[self.beta1, self.beta2]},
+            {'params': self.fusion.parameters(), 'lr': self.g_lr,'betas':[self.beta1, self.beta2]},
         ]
         optimizer = torch.optim.AdamW(params=params)
         return optimizer
@@ -268,17 +265,17 @@ class Solver():
         for self.epoch in range(1, self.num_epochs + 1):
             self.start_time = time.time()
             loss_tmp = self.get_loss_tmp()
-            # self.G.train(); self.D_A.train(); 
-            self.D_A.train(); 
+            self.D_A.train() 
             if self.double_d: self.D_B.train()
-            losses_G = []; losses_D_A = []; losses_D_B = []
-            
+            losses_G = []
+            losses_D_A = []
+            losses_D_B = []
             with tqdm(data_loader, desc="training") as pbar:
                 for step, (source, reference, s_latent, r_latent, s_name, r_name) in enumerate(pbar):
                     # image, mask, diff, lms
+                    # if (step==2):exit()
                     image_s, image_r = source[0].to(self.device), reference[0].to(self.device) # (b, c, h, w)
                     mask_s_full, mask_r_full = source[1].to(self.device), reference[1].to(self.device) # (b, c', h, w) 
-                    diff_s, diff_r = source[2].to(self.device), reference[2].to(self.device) # (b, 136, h, w)
                     lms_s, lms_r = source[3].to(self.device), reference[3].to(self.device) # (b, K, 2)
                     c_s = torch.tensor([self.camera_dic[x]
                                  for x in s_name], device=self.device)  # (b,25)
@@ -291,12 +288,6 @@ class Solver():
                     r_Image = [Image.open(os.path.join(
                         self.root, 'images/makeup', r_name[i])) for i in range(self.opts.batch_size)]
 
-
-
-                    # process input mask
-                    mask_s = torch.cat((mask_s_full[:,0:1], mask_s_full[:,1:].sum(dim=1, keepdim=True)), dim=1)
-                    mask_r = torch.cat((mask_r_full[:,0:1], mask_r_full[:,1:].sum(dim=1, keepdim=True)), dim=1)
-                    #mask_s = mask_s_full[:,:2]; mask_r = mask_r_full[:,:2]
 
                     # ================= Generate ================== #
                     fake_A = self.get_syn(s_latent,r_Image,c_s)
@@ -410,32 +401,40 @@ class Solver():
                     # cycle loss
                     rec_A = self.rec_img(fake_A, s_Image,c_s)
                     rec_B = self.rec_img(fake_B, r_Image,c_r)
-
-
-                    # cycle loss v2
                     g_loss_rec_A = self.criterionL1(rec_A, image_s) * self.lambda_A
                     g_loss_rec_B = self.criterionL1(rec_B, image_r) * self.lambda_B
 
                     # vgg loss
                     vgg_s = self.vgg(image_s).detach()
                     vgg_fake_A = self.vgg(fake_A)
-                    g_loss_A_vgg = self.criterionL2(vgg_fake_A, vgg_s) * self.lambda_A * self.lambda_vgg
+                    g_loss_A_vgg = self.criterionL1(vgg_fake_A, vgg_s) * self.lambda_A * self.lambda_vgg
 
                     vgg_r = self.vgg(image_r).detach()
                     vgg_fake_B = self.vgg(fake_B)
-                    g_loss_B_vgg = self.criterionL2(vgg_fake_B, vgg_r) * self.lambda_B * self.lambda_vgg
+                    g_loss_B_vgg = self.criterionL1(vgg_fake_B, vgg_r) * self.lambda_B * self.lambda_vgg
 
                     loss_rec = (g_loss_rec_A + g_loss_rec_B + g_loss_A_vgg + g_loss_B_vgg) * 0.5
 
                     # Combined loss
                     g_loss = g_A_loss_adv + g_B_loss_adv + loss_rec + loss_idt + g_A_loss_pgt + g_B_loss_pgt
+                    # g_loss = loss_rec + loss_idt + g_A_loss_pgt + g_B_loss_pgt
 
+
+                    print('loss_adv_A',g_A_loss_adv)
+                    print('loss_adv_B',g_B_loss_adv)
+                    print('loss_rec:',loss_rec)
+                    print('loss_idt:',loss_idt)
+                    print('loss_pgt_A:',g_A_loss_adv)
+                    print('loss_pgt_B:',g_B_loss_adv)
                     self.g_optimizer.zero_grad()
+                    # self.print_value(self.net_farl)
+                    # self.print_value(self.fusion)
+                    # with torch.autograd.detect_anomaly():
                     g_loss.backward()
                     self.g_optimizer.step()
-
-                    self.print_value(self.net_farl)
-                    self.print_value(self.fusion)
+                    print('==========更新梯度后==========')
+                    # self.print_value(self.net_farl)
+                    # self.print_value(self.fusion)
                     # Logging
                     loss_tmp['G-A-loss-adv'] += g_A_loss_adv.item()
                     loss_tmp['G-B-loss-adv'] += g_B_loss_adv.item()
@@ -447,12 +446,11 @@ class Solver():
                     loss_tmp['G-loss-eye-pgt'] += (g_A_eye_loss_pgt + g_B_eye_loss_pgt).item()
                     loss_tmp['G-loss-lip-pgt'] += (g_A_lip_loss_pgt + g_B_lip_loss_pgt).item()
                     loss_tmp['G-loss-pgt'] += (g_A_loss_pgt + g_B_loss_pgt).item()
-                    print('loss_tmp:',loss_tmp)
                     losses_G.append(g_loss.item())
                     pbar.set_description("Epoch: %d, Step: %d, Loss_G: %0.4f, Loss_D_A: %0.4f, Loss_D_B: %0.4f" % \
                                 (self.epoch, step + 1, np.mean(losses_G), np.mean(losses_D_A), np.mean(losses_D_B)))
                     #save the images during a epoch
-                    if (step) % self.interval == 0:
+                    if (step) % self.interval_step == 0:
                         self.vis_train([image_s.detach().cpu(), 
                                         synthesis_img.detach().cpu(), 
                                         fake_A.detach().cpu(), 
@@ -467,8 +465,8 @@ class Solver():
             self.plot_loss()
 
             # Decay learning rate
-            # self.g_scheduler.step()
-            # self.d_A_scheduler.step()
+            self.g_scheduler.step()
+            self.d_A_scheduler.step()
             if self.double_d:
                 self.d_B_scheduler.step()
 
@@ -491,7 +489,9 @@ class Solver():
     def print_value(self,net):
             for name, parms in net.named_parameters():
                 print('-->name:', name, '-->grad_requirs:',parms.requires_grad, \
-                ' -->grad_value:',parms.grad)
+                ' -->grad_value:',parms.grad ,'\n')
+                print('-->name:', name,  \
+                '-->parms:',parms)
     def get_loss_tmp(self):
         loss_tmp = {
             'D-A-loss_real':0.0,

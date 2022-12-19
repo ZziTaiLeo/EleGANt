@@ -204,8 +204,27 @@ class Transformer(nn.Module):
     #TODO 
     def forward(self, x: torch.Tensor):
         if self.use_checkpoint and self.is_training:
-            for blk in self.resblocks: 
+            for i,blk in enumerate(self.resblocks): 
+                # print(f'this is {i}th blocks in  farl transformer')
+                # print(f'input x is \n --->{x}')
+                # print(f'***is NAN in input x: {torch.isnan(x).any()}',f'****is INF in input x: {torch.isinf(x).any()}',) 
                 x = checkpoint.checkpoint(blk,x)
+                # print(f'***is NAN in output x: {torch.isnan(x).any()}',f'****is INF in output x: {torch.isinf(x).any()}',) 
+                # print(f'ouput x.shape is --->{x.shape}')
+                # print(f'ouput x is \n --->{x}')
+            #     for name,param in blk.named_parameters():
+            #         print(f'================this is {i}th blocks in  farl transformer=====================')
+            #         if param.grad is not None: 
+            #             print(f'***is NAN in param.grad: {torch.isnan(torch.tensor(param.grad)).any()}',f'****is INF in param.grad: {torch.isinf(torch.tensor(param.grad)).any()}',) 
+            #         print(f'***is NAN in param: {torch.isnan(param).any()}',f'****is INF in param: {torch.isinf(param).any()}',) 
+            #         print(
+            #         f'name--->{name} \n  block.grad---> {param.grad} \n',
+            #         f'name--->{name}  block.grad_required---> {param.requires_grad} \n',
+            #         f'name--->{name} \n  block.params.shape---> {param.shape}',
+            #         f'name--->{name} \n  block.params---> {param}\n',
+            #         '---------------------------------------')
+            # print(f'===============this is fusion net {i}th blocks============')
+                    
         else:
             x = self.resblocks(x)
         return self.resblocks(x)
@@ -231,20 +250,17 @@ class VisionTransformer(nn.Module):
 
     def forward(self, x: torch.Tensor):
         x = self.conv1(x)  # shape = [*, width, grid, grid]
+        # print(f'is NAN in farl conv1: {torch.isnan(x).any()}') 
         x = x.reshape(x.shape[0], x.shape[1], -1)  # shape = [*, width, grid ** 2]
         x = x.permute(0, 2, 1)  # shape = [*, grid ** 2, width]
         x = torch.cat([self.class_embedding.to(x.dtype) + torch.zeros(x.shape[0], 1, x.shape[-1], dtype=x.dtype, device=x.device), x], dim=1)  # shape = [*, grid ** 2 + 1, width]
         x = x + self.positional_embedding.to(x.dtype)
         x = self.ln_pre(x)
 
+        # print(f'is NAN in farl ln_pre: {torch.isnan(x).any()}') 
         x = x.permute(1, 0, 2)  # NLD -> LND
         x = self.transformer(x)
         x = x.permute(1, 0, 2)  # LND -> NLD
-
-        # x = self.ln_post(x[:, 0, :])   # x = (1,768)
-        # if self.proj is not None:
-        #     x = x @ self.proj
-
         return x
 
 

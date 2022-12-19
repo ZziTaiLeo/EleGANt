@@ -1,8 +1,8 @@
-name             : test_5e-4
+name             : lr_2e_4_
 save_path        : results
 load_folder      : None
 keepon           : False
-gpu              : cuda:3
+gpu              : cuda:2
 batch_size       : 1
 test_batch_size  : 1
 workers          : 4
@@ -26,13 +26,13 @@ reference_latents : /media/pc/hengda1t/hengda/datasets/latents/makeup
 ckpt             : ../pretrained_models/best_model_38w.pt
 is_training      : True
 use_checkpoint   : True
-device           : cuda:3
-save_folder      : results/test_5e-4
+device           : cuda:2
+save_folder      : results/lr_2e_4_
 DATA:
   BATCH_SIZE: 1
   IMG_SIZE: 512
   NUM_WORKERS: 4
-  PATH: /media/pc/hengda1t/hengda/datasets/MT-Dataset/
+  PATH: /media/pc/hengda1t/hengda/datasets/s-MT-Dataset/
 LOG:
   SAVE_FREQ: 10
   VIS_FREQ: 1
@@ -89,9 +89,93 @@ TRAINING:
   BETA1: 0.5
   BETA2: 0.999
   DOUBLE_D: False
-  D_LR: 0.0005
-  G_LR: 0.0005
+  D_LR: 0.0002
+  G_LR: 0.0002
   LR_DECAY_FACTOR: 0.05
-  NUM_EPOCHS: 50
+  NUM_EPOCHS: 300
 G, the number of parameters: 30662136
 D_A, the number of parameters: 2781105
+
+========================================
+Epoch 1, time 656.42 s
+D-A-loss_real	0.247915
+D-A-loss_fake	0.221917
+D-B-loss_real	0.279408
+D-B-loss_fake	0.174363
+G-A-loss-adv	0.382147
+G-B-loss-adv	0.390586
+G-loss-idt	2.372607
+G-loss-img-rec	4.745159
+G-loss-vgg-rec	0.010632
+G-loss-rec	4.755791
+G-loss-skin-pgt	2.259025
+G-loss-eye-pgt	1.831489
+G-loss-lip-pgt	1.075658
+G-loss-pgt	5.166171
+G-loss	13.067302
+D-A-loss	0.234916
+D-B-loss	0.226885
+========================================
+
+========================================
+Epoch 2, time 651.39 s
+D-A-loss_real	0.231064
+D-A-loss_fake	0.224203
+D-B-loss_real	0.260072
+D-B-loss_fake	0.200452
+G-A-loss-adv	0.336932
+G-B-loss-adv	0.354132
+G-loss-idt	1.827835
+G-loss-img-rec	3.655700
+G-loss-vgg-rec	0.010308
+G-loss-rec	3.666008
+G-loss-skin-pgt	1.737384
+G-loss-eye-pgt	1.355316
+G-loss-lip-pgt	0.829093
+G-loss-pgt	3.921793
+G-loss	10.106700
+D-A-loss	0.227634
+D-B-loss	0.230262
+========================================
+
+========================================
+Epoch 3, time 652.17 s
+D-A-loss_real	0.220162
+D-A-loss_fake	0.215743
+D-B-loss_real	0.246347
+D-B-loss_fake	0.198549
+G-A-loss-adv	0.344985
+G-B-loss-adv	0.356570
+G-loss-idt	1.632935
+G-loss-img-rec	3.265881
+G-loss-vgg-rec	0.010561
+G-loss-rec	3.276441
+G-loss-skin-pgt	1.514122
+G-loss-eye-pgt	1.246768
+G-loss-lip-pgt	0.738109
+G-loss-pgt	3.499000
+G-loss	9.109932
+D-A-loss	0.217953
+D-B-loss	0.222448
+========================================
+
+========================================
+Epoch 4, time 654.74 s
+D-A-loss_real	0.218099
+D-A-loss_fake	0.209516
+D-B-loss_real	0.229594
+D-B-loss_fake	0.195594
+G-A-loss-adv	0.362054
+G-B-loss-adv	0.368666
+G-loss-idt	1.489700
+G-loss-img-rec	2.979396
+G-loss-vgg-rec	0.010157
+G-loss-rec	2.989553
+G-loss-skin-pgt	1.443389
+G-loss-eye-pgt	1.210382
+G-loss-lip-pgt	0.701731
+G-loss-pgt	3.355503
+G-loss	8.565477
+D-A-loss	0.213808
+D-B-loss	0.212594
+========================================

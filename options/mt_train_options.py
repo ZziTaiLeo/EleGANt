@@ -41,7 +41,7 @@ class TrainOptions:
         self.parser.add_argument('--dataset_json',default='/media/pc/hengda1t/hengda/datasets/MT-Dataset/images/mirror_non_makeup/all_mt_dataset.json',help='path/to/your_no_makeup/dataset.json')
         self.parser.add_argument('--source_latents',default='/media/pc/hengda1t/hengda/datasets/latents/non_makeup',help='path/to/your_no_makeup/dataset.json')
         self.parser.add_argument('--reference_latents',default='/media/pc/hengda1t/hengda/datasets/latents/makeup',help='path/to/your_no_makeup/dataset.json')
-        self.parser.add_argument('--ckpt',default='../pretrained_models/best_model_copy.pt',help='path/to/your_no_makeup/dataset.json')
+        self.parser.add_argument('--ckpt',default='../pretrained_models/iteration_500000.pt',help='path/to/your_no_makeup/dataset.json')
         self.parser.add_argument('--is_training',default=True,help='state')
         self.parser.add_argument('--use_checkpoint',default=True,help='speed up in your training')
 

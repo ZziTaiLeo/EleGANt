@@ -1,8 +1,8 @@
-name             : test_5e5
+name             : lr_5e_5
 save_path        : results
 load_folder      : None
 keepon           : False
-gpu              : cuda:3
+gpu              : cuda:2
 batch_size       : 1
 test_batch_size  : 1
 workers          : 4
@@ -26,13 +26,13 @@ reference_latents : /media/pc/hengda1t/hengda/datasets/latents/makeup
 ckpt             : ../pretrained_models/best_model_38w.pt
 is_training      : True
 use_checkpoint   : True
-device           : cuda:3
-save_folder      : results/test_5e5
+device           : cuda:2
+save_folder      : results/lr_5e_5
 DATA:
   BATCH_SIZE: 1
   IMG_SIZE: 512
   NUM_WORKERS: 4
-  PATH: /media/pc/hengda1t/hengda/datasets/MT-Dataset/
+  PATH: /media/pc/hengda1t/hengda/datasets/s-MT-Dataset/
 LOG:
   SAVE_FREQ: 10
   VIS_FREQ: 1
@@ -90,7 +90,7 @@ TRAINING:
   BETA2: 0.999
   DOUBLE_D: False
   D_LR: 0.0002
-  G_LR: 0.005
+  G_LR: 0.0005
   LR_DECAY_FACTOR: 0.05
   NUM_EPOCHS: 50
 G, the number of parameters: 30662136

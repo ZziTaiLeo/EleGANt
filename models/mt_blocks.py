@@ -25,6 +25,7 @@ class ResidualSelfCrossAttentionBlock(nn.Module): #标准的corss-attention tran
         norm_y = self.ln_cross_y(y)
         x = x + self.cross_attn(norm_x, norm_y, norm_y, key_padding_mask = key_padding_mask, need_weights=False)[0]
         x = x + self.mlp(self.ln_2(x))
+        # print('mt_blocks_x:',x)
         return x
 
 
@@ -61,10 +62,30 @@ class SimpleSelfCrossTransformer(nn.Module):
         x = x.permute(1, 0, 2)  # NLD -> LND
         reference = reference.permute(1, 0, 2)
         for i, block in enumerate(self.transformer):
+            # print(f'===========this is fusion net {i}th ============ \n')
+            # print(f'{i}_x--->\n input--->{x}:')
+            # print(f'***is NAN in input x: {torch.isnan(x).any()}',f'****is INF in input x: {torch.isinf(x).any()}',) 
             if  i in self.inject_layers:
                 x = block(x, reference, key_padding_mask)
             else:
                 x = block(x, x, key_padding_mask = None)
+
+            # print(f'***is NAN in output x: {torch.isnan(x).any()}',f'****is INF in output x: {torch.isinf(x).any()}',) 
+            # print(f'x_output--->{x.shape} \n')
+            # print(f'x_output--->\n {x} \n')
+
+            # for name,param in block.named_parameters():
+            #         print(f'================this is {i}th blocks in  mtblock transformer=====================')
+            #         if param.grad is not None: 
+            #             print(f'***is NAN in param.grad: {torch.isnan(torch.tensor(param.grad)).any()}',f'****is INF in param.grad: {torch.isinf(torch.tensor(param.grad)).any()}',) 
+            #         print(f'***is NAN in param: {torch.isnan(param).any()}',f'****is INF in param: {torch.isinf(param).any()}',) 
+            #         print(
+            #         f'name--->{name} \n block.grad---> {param.grad} \n',
+            #         f'name--->{name}  block.grad_required---> {param.requires_grad} \n',
+            #         f'name--->{name}  block.params.shape---> {param.shape}\n',
+            #         f'name--->{name} \n  block.params---> {param}',
+            #         '---------------------------------------')
+            # print(f'===============this is fusion net {i}th blocks============')
         x = x.permute(1, 0, 2)  # LND -> NLD
         return x
     
