@@ -12,21 +12,27 @@ from mt_training.utils import create_logger, print_args
 
 
 def main(config, args):
+    print('preparing logger')
     logger = create_logger(args.save_folder, args.name, 'info', console=True)
     print_args(args, logger)
     logger.info(config)
     
+    print('loading dataset...')
     dataset = MakeupDataset(args,config)
     data_loader = DataLoader(dataset, batch_size=config.DATA.BATCH_SIZE, num_workers=config.DATA.NUM_WORKERS, shuffle=True)
     
+
+
     solver = Solver(config, args, logger)
+    print('training...')
     solver.train(data_loader)
     
 
 if __name__ == "__main__":
+    print('parsing args')
     parser = argparse.ArgumentParser("argument for training")
     parser.add_argument("--name", type=str, default='elegant')
-    parser.add_argument("--save_path", type=str, default='results', help="path to save model")
+    parser.add_argument("--save_path", type=str, default='../results/', help="path to save model")
     parser.add_argument("--load_folder", type=str, help="path to load model", 
                         default=None)
     parser.add_argument("--keepon", default=False, action="store_true", help='keep on training')
@@ -62,8 +68,8 @@ if __name__ == "__main__":
                                 help="Name of training parameters to update the loaded training checkpoint")
     parser.add_argument('--network_pkl',default='../pretrained_models/ffhq512-128.pkl',help='path/to/your/eg3d_generator_pkl')
     parser.add_argument('--dataset_json',default='/media/pc/hengda1t/hengda/datasets/MT-Dataset/images/all_mt_dataset.json',help='path/to/your_no_makeup/dataset.json')
-    parser.add_argument('--source_latents',default='/media/pc/hengda1t/hengda/datasets/latents/non-makeup',help='path/to/your_no_makeup/dataset.json')
-    parser.add_argument('--reference_latents',default='/media/pc/hengda1t/hengda/datasets/latents/makeup',help='path/to/your_no_makeup/dataset.json')
+    parser.add_argument('--source_latents',default='/media/pc/hengda1t/hengda/datasets/latents/non-makeup/',help='path/to/your_no_makeup/dataset.json')
+    parser.add_argument('--reference_latents',default='/media/pc/hengda1t/hengda/datasets/latents/makeup/',help='path/to/your_no_makeup/dataset.json')
     parser.add_argument('--ckpt',default='../pretrained_models/ft_on_mt_58w.pt',help='path/to/your_no_makeup/dataset.json')
     parser.add_argument('--is_training',default=True,help='state')
     parser.add_argument('--use_checkpoint',default=True,help='speed up in your training')
