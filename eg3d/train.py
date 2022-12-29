@@ -41,7 +41,6 @@ if __name__ == "__main__":
     parser.add_argument('--test_workers', default=4, type=int,
                                 help='Number of test/inference dataloader workers')
 
-    parser.add_argument('--learning_rate', default=0.0001, type=float, help='Optimizer learning rate')
     parser.add_argument('--optim_name', default='ranger', type=str, help='Which optimizer to use')
     parser.add_argument('--max_steps', default=200000, type=int, help='Maximum number of training steps')
     parser.add_argument('--image_interval', default=100, type=int,
@@ -62,10 +61,10 @@ if __name__ == "__main__":
     parser.add_argument('--update_param_list', nargs='+', type=str, default=None,
                                 help="Name of training parameters to update the loaded training checkpoint")
     parser.add_argument('--network_pkl',default='../pretrained_models/ffhq512-128.pkl',help='path/to/your/eg3d_generator_pkl')
-    parser.add_argument('--dataset_json',default='/media/pc/hengda1t/hengda/datasets/MT-Dataset/images/mirror_non_makeup/all_mt_dataset.json',help='path/to/your_no_makeup/dataset.json')
-    parser.add_argument('--source_latents',default='/media/pc/hengda1t/hengda/datasets/latents/non_makeup',help='path/to/your_no_makeup/dataset.json')
+    parser.add_argument('--dataset_json',default='/media/pc/hengda1t/hengda/datasets/MT-Dataset/images/all_mt_dataset.json',help='path/to/your_no_makeup/dataset.json')
+    parser.add_argument('--source_latents',default='/media/pc/hengda1t/hengda/datasets/latents/non-makeup',help='path/to/your_no_makeup/dataset.json')
     parser.add_argument('--reference_latents',default='/media/pc/hengda1t/hengda/datasets/latents/makeup',help='path/to/your_no_makeup/dataset.json')
-    parser.add_argument('--ckpt',default='../pretrained_models/best_model_38w.pt',help='path/to/your_no_makeup/dataset.json')
+    parser.add_argument('--ckpt',default='../pretrained_models/ft_on_mt_58w.pt',help='path/to/your_no_makeup/dataset.json')
     parser.add_argument('--is_training',default=True,help='state')
     parser.add_argument('--use_checkpoint',default=True,help='speed up in your training')
     args = parser.parse_args()

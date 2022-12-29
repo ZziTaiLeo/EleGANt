@@ -75,5 +75,7 @@ def get_image_from_w(w, G,c):
         w = w.unsqueeze(0)
     with torch.no_grad():
         img = G.synthesis(w,c, noise_mode='const')['image']
+        print('img.shape_1:',img.shape)
         img = (img.permute(0, 2, 3, 1) * 127.5 + 128).clamp(0, 255).to(torch.uint8).detach().cpu().numpy()
+        print('img.shape_2:',img.shape)
     return img[0]

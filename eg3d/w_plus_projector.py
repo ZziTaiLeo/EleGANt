@@ -11,14 +11,19 @@
 import copy
 import wandb
 import numpy as np
+from PIL import Image
 import torch
 import torch.nn.functional as F
 from tqdm import tqdm
-import optimizer_config, optimizer_hyperparameters
 import dnnlib
 from utils.log_utils import log_image_from_w
-
-
+from utils import common, train_utils
+from torchvision import transforms
+import matplotlib.pyplot as plt
+from utils import log_utils
+import optimizer_config
+import optimizer_hyperparameters
+import os
 def project(
         G,
         c,
@@ -35,17 +40,38 @@ def project(
         regularize_noise_weight=1e5,
         verbose=False,
         device: torch.device,
-        use_wandb=True,
+        use_wandb=False,
         initial_w=None,
-        image_log_step=optimizer_config.image_rec_result_log_snapshot,
-        w_name: str
+        image_log_step=100,
+        logger = None,
+        image_name = None
 ):
     assert target.shape == (G.img_channels, G.img_resolution, G.img_resolution)
 
     def logprint(*args):
-        if verbose:
-            print(*args)
+        print(*args)
+    def parse_and_log_image(x,y_hat,prefix=None,step=0, subscript=None, display_count=1):
+        im_data = []
+        for i in range(display_count):
+            cur_im_data = {
+                'source_face':x,
+                'output_face': y_hat
+            }
+            im_data.append(cur_im_data)  
+        log_images(name=prefix, im_data=im_data, subscript=subscript,step=step)
 
+    def log_images(im_data, name, subscript=None, step=0):
+        fig = common.vis_faces(im_data)
+        if subscript:
+            path = os.path.join(logger.log_dir, name,
+                                '{}_{:04d}.jpg'.format(subscript, step))
+        else:
+            path = os.path.join(logger.log_dir, name,
+                                '{:04d}.jpg'.format(step))
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        fig.savefig(path)
+        plt.close(fig)
+     
     G = copy.deepcopy(G).eval().requires_grad_(False).to(device).float() # type: ignore
 
     # Compute w stats.
@@ -57,7 +83,7 @@ def project(
     print('w_samples:',w_samples.shape)
     w_samples = w_samples[:, :1, :].cpu().numpy().astype(np.float32)  # [N, 1, C]
     w_avg = np.mean(w_samples, axis=0, keepdims=True)  # [1, 1, C]
-    w_avg_tensor = torch.from_numpy(w_avg).to(optimizer_config.device)
+    w_avg_tensor = torch.from_numpy(w_avg).to(device)
     w_std = (np.sum((w_samples - w_avg) ** 2) / w_avg_samples) ** 0.5
 
     start_w = initial_w if initial_w is not None else w_avg
@@ -91,13 +117,12 @@ def project(
 
 
     # Init wandb.
-    wandb.init(project='optimizer_inversion',resume='allow') 
+    # wandb.init(project='optimizer_inversion',resume='allow') 
 
     for step in tqdm(range(num_steps)):
 
         # Learning rate schedule.
         t = step / num_steps
-        print('t:',t)
         w_noise_scale = w_std * initial_noise_factor * max(0.0, 1.0 - t / noise_ramp_length) ** 2
         lr_ramp = min(1.0, (1.0 - t) / lr_rampdown_length)
         lr_ramp = 0.5 - 0.5 * np.cos(lr_ramp * np.pi)
@@ -137,12 +162,12 @@ def project(
 
         if step % image_log_step == 0:
             with torch.no_grad():
-                if use_wandb:
-                    optimizer_config.training_step += 1
-                    wandb.log({f'loss_{w_name}': loss.detach().cpu(), f'loss_reg_{w_name}':reg_loss,
-                               f'loss_dist_{w_name}':dist}, step=optimizer_config.training_step)
-                    log_image_from_w(w_opt, G,c, w_name)
-
+                tmp = target.permute(1,2,0)
+                tmp = tmp.detach().cpu().numpy()
+                tmp = Image.fromarray(tmp.astype('uint8')) 
+                img = log_utils.get_image_from_w(w_opt, G,c=c) # 
+                img = Image.fromarray(img.astype('uint8'))
+                parse_and_log_image(x=tmp,y_hat=img,prefix=image_name,step=step)
         # Step
         optimizer.zero_grad(set_to_none=True)
         loss.backward()
@@ -153,7 +178,6 @@ def project(
             for buf in noise_bufs.values():
                 buf -= buf.mean()
                 buf *= buf.square().mean().rsqrt()
-
 
     del G
     return w_opt

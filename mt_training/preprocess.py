@@ -48,10 +48,10 @@ class PreProcess:
             transforms.ToTensor(),
             transforms.Normalize([0.5,0.5,0.5],[0.5,0.5,0.5])])
     
-    ############################## Mask Process ##############################
+    ############################## mask process ##############################
     # mask attribute: 0:background 1:face 2:left-eyebrow 3:right-eyebrow 4:left-eye 5: right-eye 6: nose
     # 7: upper-lip 8: teeth 9: under-lip 10:hair 11: left-ear 12: right-ear 13: neck
-    def mask_process(self, mask: torch.Tensor):
+    def mask_process(self, mask: torch.tensor):
         '''
         mask: (1, h, w)
         '''        
@@ -68,7 +68,7 @@ class PreProcess:
 
         #mask_list = [mask_lip, mask_face, mask_eyebrow_left, mask_eyebrow_right, mask_eye_left, mask_eye_right]
         mask_list = [mask_lip, mask_face, mask_eye_left, mask_eye_right]
-        mask_aug = torch.cat(mask_list, 0) # (C, H, W)
+        mask_aug = torch.cat(mask_list, 0) # (c, h, w)
         return mask_aug      
 
     def save_mask(self, mask: torch.Tensor, path):

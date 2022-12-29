@@ -8,6 +8,7 @@
 
 """Project given image to the latent space of pretrained network pickle."""
 
+import os 
 import copy
 import wandb
 import numpy as np
@@ -20,8 +21,8 @@ import sys
 sys.path.append('..')
 from utils import log_utils
 import dnnlib
-
-
+from utils import common, train_utils
+import matplotlib.pyplot as plt
 def project(
         G,
         c,
@@ -41,13 +42,36 @@ def project(
         use_wandb=False,
         initial_w=None,
         image_log_step=optimizer_config.image_rec_result_log_snapshot,
-        w_name: str
+        logger: None
 ):
     assert target.shape == (G.img_channels, G.img_resolution, G.img_resolution)
 
     def logprint(*args):
         if verbose:
             print(*args)
+    def parse_and_log_image(x,y_hat,prefix=None,step=None, subscript=None, display_count=2):
+        im_data = []
+        for i in range(display_count):
+            cur_im_data = {
+                'source_face':common.log_input_image(x),
+                'output_face':common.tensor2im(y_hat[i])
+            }
+            im_data.append(cur_im_data)  
+        log_images(name=prefix, im_data=im_data, subscript=subscript,step=step)
+
+    def log_images(im_data, name, subscript=None, step=None):
+        fig = common.vis_faces(im_data)
+        step = step
+        if subscript:
+            path = os.path.join(logger.log_dir, name,
+                                '{}_{:04d}.jpg'.format(subscript, step))
+        else:
+            path = os.path.join(logger.log_dir, name,
+                                '{:04d}.jpg'.format(step))
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        fig.savefig(path)
+        plt.close(fig)
+            
 
     G = copy.deepcopy(G).eval().requires_grad_(False).to(device).float()  # type: ignore
 
@@ -100,7 +124,7 @@ def project(
 
         # Synth images from opt_w.
         w_noise = torch.randn_like(w_opt) * w_noise_scale
-        ws = (w_opt + w_noise).repeat([1, G.mapping.num_ws, 1])
+        ws = (w_opt + w_noise).repeat([1, 14, 1])
         synth_images = G.synthesis(ws, noise_mode='const', force_fp32=True)
 
         # Downsample image to 256x256 if it's larger than that. VGG was built for 224x224 images.
@@ -126,11 +150,12 @@ def project(
 
         if step % image_log_step == 0:
             with torch.no_grad():
-                if use_wandb:
-                    optimizer_config.training_step += 1
-                    wandb.log({f'first projection _{w_name}': loss.detach().cpu()}, step=optimizer_config.training_step)
-                    log_utils.log_image_from_w(w_opt.repeat([1, G.mapping.num_ws, 1]), G, w_name)
-
+                # if use_wandb:
+                #     optimizer_config.training_step += 1
+                #     wandb.log({f'first projection _{w_name}': loss.detach().cpu()}, step=optimizer_config.training_step)
+                #     log_utils.log_image_from_w(w_opt.repeat([1, G.mapping.num_ws, 1]), G, w_name)
+                img = log_utils.get_image_from_w(w_opt.repeat([1, G.mapping.num_ws, 1]), G,c=c)
+                parse_and_log_image(x=target,y_hat=img,prefix='optimize')
         # Step
         optimizer.zero_grad(set_to_none=True)
         loss.backward()

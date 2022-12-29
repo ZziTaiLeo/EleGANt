@@ -21,6 +21,7 @@ from models.loss import GANLoss, MakeupLoss, ComposePGT, AnnealingComposePGT
 from eg3d import dnnlib
 from eg3d import legacy
 from mt_training.utils import plot_curves
+import matplotlib.pyplot as plt
 # torch.autograd.set_detect_anomaly(True) 
 class Solver():
     def __init__(self, config, opts, logger=None, inference=False):
@@ -275,6 +276,7 @@ class Solver():
                     # image, mask, diff, lms
                     # if (step==2):exit()
                     image_s, image_r = source[0].to(self.device), reference[0].to(self.device) # (b, c, h, w)
+                    print('image.shape:',image_s.shape)
                     mask_s_full, mask_r_full = source[1].to(self.device), reference[1].to(self.device) # (b, c', h, w) 
                     lms_s, lms_r = source[3].to(self.device), reference[3].to(self.device) # (b, K, 2)
                     c_s = torch.tensor([self.camera_dic[x]
@@ -292,6 +294,9 @@ class Solver():
                     # ================= Generate ================== #
                     fake_A = self.get_syn(s_latent,r_Image,c_s)
                     fake_B = self.get_syn(r_latent,s_Image,c_r)
+
+                    if step==0:
+                        inversion_origin = fake_A
 
                     # =========== reconstruct ==========
 
@@ -451,10 +456,13 @@ class Solver():
                                 (self.epoch, step + 1, np.mean(losses_G), np.mean(losses_D_A), np.mean(losses_D_B)))
                     #save the images during a epoch
                     if (step) % self.interval_step == 0:
-                        self.vis_train([image_s.detach().cpu(), 
-                                        synthesis_img.detach().cpu(), 
-                                        fake_A.detach().cpu(), 
-                                        pgt_A.detach().cpu()],step=step)
+                        self.vis_train([self.tensor2im(image_s.detach().cpu()),
+                                self.tensor2im(inversion_origin.detach().cpu()),
+                                self.tensor2im(image_r.detach().cpu()),
+                                self.tensor2im(fake_A.detach().cpu()),
+                                self.tensor2im(pgt_A.detach().cpu())],
+                                s_name, r_name, step=step+1
+                                )
             self.end_time = time.time()
             for k, v in loss_tmp.items():
                 loss_tmp[k] = v / self.len_dataset  
@@ -476,9 +484,13 @@ class Solver():
             #save the images
             if (self.epoch) % self.vis_freq == 0:
                 self.vis_train([image_s.detach().cpu(), 
+                                inversion_origin.detach().cpu(),
                                 image_r.detach().cpu(), 
                                 fake_A.detach().cpu(), 
-                                pgt_A.detach().cpu()],step=None)
+                                pgt_A.detach().cpu()],
+                                s_name, r_name, step=step+1
+                               )
+
             #                   rec_A.detach().cpu()])
 
             # Save model checkpoints
@@ -576,17 +588,51 @@ class Solver():
         out = (x + 1) / 2
         return out.clamp(0, 1)
     
-    def vis_train(self, img_train_batch, step=None):
+    def vis_train(self,img_train_batch, name_s,name_r,step=None):
         # saving training results
-        img_train_batch = torch.cat(img_train_batch, dim=3)
-        if step==None:
-            save_path = os.path.join(self.vis_folder, 'epoch_{:d}_fake.png'.format(self.epoch))
-        else:
-            self.img_interval = os.path.join(self.vis_folder,str(self.epoch))
-            os.makedirs(self.img_interval,exist_ok=True)
-            save_path = os.path.join(self.img_interval, 'step_{:d}_fake.png'.format(step))
-        vis_image = make_grid(self.de_norm(img_train_batch), 1)
-        save_image(vis_image, save_path) #, normalize=True)
+        display_count=1
+        print(img_train_batch)
+        fig = plt.figure(figsize=(5*len(img_train_batch),8*display_count ))
+        gs = fig.add_gridspec(display_count,len(img_train_batch))
+        for i in range(display_count):
+            fig.add_subplot(gs[i,0])
+            self.vis_face(img_train_batch,fig,gs,i,name_s,name_r)
+        plt.tight_layout()
+        fig.savefig(os.path.join(self.vis_folder,f'{step}_{name_s}'))# add name
+        plt.close(fig)
+
+
+    def vis_face(self, img_batch, fig, gs,i,name_s,name_r):
+        print('img_batch:',img_batch)
+        plt.imshow(img_batch[0])
+        plt.title(f'Input:{name_s}')
+        
+        fig.add_subplot(gs[i,1])
+        plt.imshow(img_batch[1])
+        plt.title(f'Inversion')
+
+        fig.add_subplot(gs[i,2])
+        plt.imshow(img_batch[2])
+        plt.title(f'Reference:{name_r}')
+        
+        fig.add_subplot(gs[i,3])
+        plt.imshow(img_batch[3])
+        plt.title('Encoder Result')
+        
+        fig.add_subplot(gs[i,4])
+        plt.imshow(img_batch[4])
+        plt.title('PGT')
+    
+    def tensor2im(self,var):
+        # var shape: (3, H, W)
+        print(var.shape)
+        var = var[0].cpu().detach().transpose(0, 2).transpose(0, 1).numpy()
+        var = ((var + 1) / 2)
+        var[var < 0] = 0
+        var[var > 1] = 1
+        var = var * 255
+        return Image.fromarray(var.astype('uint8')) 
+
 
     def generate(self, image_A, image_B, mask_A=None, mask_B=None, 
                  diff_A=None, diff_B=None, lms_A=None, lms_B=None):

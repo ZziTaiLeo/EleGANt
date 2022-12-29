@@ -24,7 +24,9 @@ import legacy
 from torchvision.transforms import transforms
 import w_plus_projector
 from PIL import Image
+from torch.utils.tensorboard import SummaryWriter
 # ----------------------------------------------------------------------------
+
 
 
 # ----------------------------------------------------------------------------
@@ -81,7 +83,7 @@ def run(
         latent_space_type:str,
         image_path:str,
         datajson:str,
-        num_steps:int
+        num_steps:int,
 ):
     """Render a latent vector interpolation video.
     Examples:
@@ -132,20 +134,17 @@ def run(
     ])
     from_im = trans(image).cuda()
     id_image = torch.squeeze((from_im.cuda() + 1) / 2) * 255
-
+    logger = SummaryWriter(log_dir=os.path.join(outdir,'logs'))
     if latent_space_type == 'w':
-
-        w = w_projector.project(G, c, outdir,id_image, device=torch.device('cuda'), w_avg_samples=600,num_steps = num_steps,
-        
-                                w_name=image_name)
+        w = w_projector.project(G, c, outdir, id_image, device=torch.device('cuda'), w_avg_samples=600, num_steps = num_steps, logger=logger,image_name=image_name)
     else:
-
-        w = w_plus_projector.project(G, c,outdir, id_image, device=torch.device('cuda'), w_avg_samples=600, w_name=image_name,num_steps = num_steps )
+        w = w_plus_projector.project(G, c,outdir, id_image, device=torch.device('cuda'), w_avg_samples=600,num_steps = num_steps, logger=logger ,image_name=image_name)
         pass
 
+
     w = w.detach().cpu().numpy()
-    os.makedirs(f'{outdir}/{image_name}_{latent_space_type}',exist_ok=True)
-    np.save(f'{outdir}/{image_name}_{latent_space_type}/{image_name}_{latent_space_type}.npy', w)
+    os.makedirs(f'{outdir}/{image_name}',exist_ok=True)
+    np.save(f'{outdir}/{image_name}/{image_name}.npy', w)
 
 # ----------------------------------------------------------------------------
 
