@@ -17,7 +17,7 @@ _C.LOG.VIS_FREQ = 1
 
 # Data settings
 _C.DATA = CfgNode()
-_C.DATA.PATH ='/media/pc/hengda1t/hengda/datasets/s-MT-Dataset/'
+_C.DATA.PATH ='/media/pc/hengda1t/hengda/datasets/MT-Dataset/'
 _C.DATA.NUM_WORKERS = 4
 _C.DATA.BATCH_SIZE = 1
 _C.DATA.IMG_SIZE = 512
@@ -68,8 +68,8 @@ _C.PREPROCESS = CfgNode()
 _C.PREPROCESS.UP_RATIO = 0.6 / 0.85  # delta_size / face_size
 _C.PREPROCESS.DOWN_RATIO = 0.2 / 0.85  # delta_size / face_size
 _C.PREPROCESS.WIDTH_RATIO = 0.2 / 0.85  # delta_size / face_size
-_C.PREPROCESS.LIP_CLASS = [7, 9]
-_C.PREPROCESS.FACE_CLASS = [1, 6]
+_C.PREPROCESS.LIP_CLASS = [12, 13]
+_C.PREPROCESS.FACE_CLASS = [1, 10]
 _C.PREPROCESS.EYEBROW_CLASS = [2, 3]
 _C.PREPROCESS.EYE_CLASS = [4, 5]
 _C.PREPROCESS.LANDMARK_POINTS = 68

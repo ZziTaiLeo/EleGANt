@@ -54,7 +54,13 @@ def bulid_delta_inverse(target_control_points):
     forward_kernel[:N, -2:].copy_(target_control_points)
     forward_kernel[-2:, :N].copy_(target_control_points.transpose(0, 1))
     # compute inverse matrix
-    inverse_kernel = torch.inverse(forward_kernel)
+    try:
+        inverse_kernel = torch.inverse(forward_kernel)
+    except:
+        print('N is "\n',N)
+        print('target_control_points.shape',target_control_points.shape)
+        print('\n target_control_points:',target_control_points)
+        print('\n forward_kernel is :\n',forward_kernel)
     return inverse_kernel
 
 

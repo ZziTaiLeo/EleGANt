@@ -26,9 +26,9 @@ class MakeupDataset(Dataset):
         
     def load_from_file(self, img_name):
         image = Image.open(os.path.join(self.root, 'images', img_name)).convert('RGB')
-        mask = self.preprocessor.load_mask(os.path.join(self.root, 'segs', img_name))
+        mask = self.preprocessor.load_mask(os.path.join(self.root, 'segs_crop', img_name))
         base_name = os.path.splitext(img_name)[0]
-        lms = self.preprocessor.load_lms(os.path.join(self.root, 'lms', f'{base_name}.npy'))
+        lms = self.preprocessor.load_lms(os.path.join(self.root, 'lms_crop', f'{base_name}.npy'))
         return self.preprocessor.process(image, mask, lms)
     
 
