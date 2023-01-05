@@ -6,7 +6,7 @@ from torch.utils.data import DataLoader
 sys.path.append('..')
 
 from mt_training.config import get_config
-from mt_training.dataset import MakeupDataset
+from mt_training.single_test_dataset import SingleMakeupDataset
 from mt_training.solver import Solver
 from mt_training.utils import create_logger, print_args
 
@@ -18,8 +18,8 @@ def main(config, args):
     logger.info(config)
     
     print('loading dataset...')
-    dataset = MakeupDataset(args,config)
-    data_loader = DataLoader(dataset, batch_size=config.DATA.BATCH_SIZE, num_workers=config.DATA.NUM_WORKERS, shuffle=True)
+    dataset = SingleMakeupDataset(args,config)
+    data_loader = DataLoader(dataset, batch_size=1, num_workers=1, shuffle=True)
     
 
 
@@ -49,7 +49,7 @@ if __name__ == "__main__":
 
     parser.add_argument('--optim_name', default='ranger', type=str, help='Which optimizer to use')
     parser.add_argument('--max_steps', default=200000, type=int, help='Maximum number of training steps')
-    parser.add_argument('--image_interval', default=200, type=int,
+    parser.add_argument('--image_interval', default=1, type=int,
                                 help='Interval for logging train images during training')
     parser.add_argument('--board_interval', default=50, type=int,
                                 help='Interval for logging metrics to tensorboard')

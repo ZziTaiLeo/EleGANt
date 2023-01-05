@@ -23,6 +23,7 @@ from eg3d import legacy
 from mt_training.utils import plot_curves
 import matplotlib.pyplot as plt
 # torch.autograd.set_detect_anomaly(True) 
+# os.environ['CUDA_LAUNCH_BLOCKING'] = '1'
 class Solver():
     def __init__(self, config, opts, logger=None, inference=False):
         self.opts = opts
@@ -44,6 +45,7 @@ class Solver():
         with open(self.opts.dataset_json, 'r') as f:
             self.camera_dic = dict(json.load(f)['labels'])
 
+        self.best_val_loss  = None
         # load Makeup Transfer Net
         self.net_farl, self.preprocess_clip, self.fusion = self.load_mt_net()
 
@@ -60,7 +62,7 @@ class Solver():
             os.makedirs(self.vis_folder)
         self.vis_freq = config.LOG.VIS_FREQ  # 1 
         self.save_freq = config.LOG.SAVE_FREQ # 10 
-        self.interval_step = 500
+        self.interval_step = opts.image_interval
         # Data & PGT
         self.img_size = config.DATA.IMG_SIZE
         self.margins = {'eye':config.PGT.EYE_MARGIN,
@@ -258,6 +260,7 @@ class Solver():
         self.len_dataset = len(data_loader)
         
         for self.epoch in range(1, self.num_epochs + 1):
+            
             self.start_time = time.time()
             loss_tmp = self.get_loss_tmp()
             self.D_A.train() 
@@ -277,7 +280,7 @@ class Solver():
                                     for x in s_name], device=self.device)  # (b,25)
                         c_r = torch.tensor([self.camera_dic[x]
                                     for x in r_name], device=self.device)  # (b,25)
-                        print('\n now input is :',s_name[0]+'\n')
+                        print('\n ===========now input is :',s_name[0]+'  ====================\n')
                         print('now  reference is :',r_name[0])
                         # farl使用
                         s_Image = [Image.open(os.path.join(
@@ -299,10 +302,28 @@ class Solver():
                         synthesis_img = torch.stack(synthesis_img,dim=0).squeeze(dim=1)
 
                         # generate pseudo ground truth
-                        pgt_A = self.pgt_maker(image_s, image_r, mask_s_full, mask_r_full, lms_s, lms_r)
-                        pgt_B = self.pgt_maker(image_r, image_s, mask_r_full, mask_s_full, lms_r, lms_s)
-                        
-                        # ================== Train D ================== #
+
+                        # pgt_A = self.pgt_maker(image_s, image_r, mask_s_full, mask_r_full, lms_s, lms_r)
+                        # pgt_B = self.pgt_maker(image_r, image_s, mask_r_full, mask_s_full, lms_r, lms_s)
+                        try:
+                            pgt_A = self.pgt_maker(image_s, image_r, mask_s_full, mask_r_full, lms_s, lms_r)
+                        except:
+                            print('error tps : ','makeup/{}'.format(r_name[0]))
+                            with open('/media/pc/hengda1t/hengda/EleGANt-eg3d/EleGANt/crop_error_img_1.txt','a') as f:
+                                f.write(f'makeup/{r_name[0]}\n')
+
+                            torch.cuda.empty_cache()
+                            continue
+                        try:    
+                            pgt_B = self.pgt_maker(image_r, image_s, mask_r_full, mask_s_full, lms_r, lms_s)
+                        except:
+                            print('error tps : ','non-makeup/{}'.format(s_name[0]))
+                            with open('/media/pc/hengda1t/hengda/EleGANt-eg3d/EleGANt/crop_error_img_1.txt','a') as f:
+                                f.write(f'non-makeup/{s_name[0]}\n')
+                            
+                            torch.cuda.empty_cache()
+                            continue 
+                        ================== Train D ================== #
                         # training D_A, D_A aims to distinguish class B
                         # Real
                         out = self.D_A(image_r)
@@ -488,9 +509,10 @@ class Solver():
             #                   rec_A.detach().cpu()])
 
             # Save model checkpoints
-
             if (self.epoch) % self.save_freq == 0:
-                self.save_models()
+                if  self.best_val_loss is None or loss_tmp['G-loss'] < self.best_val_loss:
+                    self.best_val_loss = loss_tmp['G-loss']
+                    self.save_models(loss_dict=loss_tmp, is_best=True)
    
 
     def print_value(self,net):
@@ -569,15 +591,35 @@ class Solver():
             if os.path.exists(D_B_path):
                 self.D_B.load_state_dict(torch.load(D_B_path, map_location=self.device))
                 print('loaded trained discriminator B {}..!'.format(D_B_path))
-    
-    def save_models(self):
+    def __get_save_dict(self):
+        save_dict = {
+            'state_dict': self.net.state_dict(),
+            'opts': vars(self.opts)
+        }
+
+        if self.opts.save_training_data:  # Save necessary information to enable training continuation from checkpoint
+            save_dict['epoch'] = self.epoch
+            save_dict['optimizer'] = self.optimizer.state_dict()
+            save_dict['best_val_loss'] = self.best_val_loss
+            if self.opts.w_discriminator_lambda > 0:
+                save_dict['discriminator_state_dict'] = self.discriminator.state_dict()
+                save_dict['discriminator_optimizer_state_dict'] = self.discriminator_optimizer.state_dict()
+        return save_dict
+    def save_models(self,loss_dict, is_best):
         save_dir = os.path.join(self.save_folder, 'epoch_{:d}'.format(self.epoch))
         if not os.path.exists(save_dir):
             os.makedirs(save_dir)
-        torch.save(self.G.state_dict(), os.path.join(save_dir, 'G.pth'))
-        torch.save(self.D_A.state_dict(), os.path.join(save_dir, 'D_A.pth'))
+        save_name = 'best_model.pt' if is_best else 'epoch_{}.pt'.format(self.epoch)
+        torch.save(self.G.state_dict(), os.path.join(save_dir, save_name))
+        torch.save(self.D_A.state_dict(), os.path.join(save_dir, 'D_A.pt'))
         if self.double_d:
-            torch.save(self.D_B.state_dict(), os.path.join(save_dir, 'D_B.pth'))
+            torch.save(self.D_B.state_dict(), os.path.join(save_dir, 'D_B.pt'))
+        with open(os.path.join(self.save_folder, 'timestamp.txt'), 'a') as f:
+            if is_best:
+                f.write(
+                    '**Best**: Step - {}, Loss - {:.3f} \n{}\n'.format(self.epoch, self.best_val_loss, loss_dict['G-loss']))
+            else:
+                f.write('Step - {}, \n{}\n'.format(self.save_folder, loss_dict['G-loss']))
 
     def de_norm(self, x):
         out = (x + 1) / 2

@@ -16,7 +16,7 @@ _C.PGT.LIP_ALPHA_VALUES = (0.05, 0.2, 0.1, 0.0)
 
 # Data settings
 _C.DATA = CfgNode()
-_C.DATA.PATH = '/media/pc/hengda1t/hengda/datasets/MT-Dataset/'
+_C.DATA.PATH = '/media/pc/hengda1t/hengda/datasets/MT-Dataset-crop/'
 _C.DATA.NUM_WORKERS = 4
 _C.DATA.BATCH_SIZE = 1
 _C.DATA.IMG_SIZE = 512

@@ -6,7 +6,7 @@ import itertools
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
+from models.modules import tps
 # TF32 is not enough, require FP32
 # Disable automatic TF32 since Pytorch 1.7
 torch.backends.cuda.matmul.allow_tf32 = False
@@ -29,11 +29,11 @@ def compute_partial_repr(input_points, control_points):
     M = control_points.size(0)
     pairwise_diff = input_points.view(N, 1, 2) - control_points.view(1, M, 2)
     # original implementation, very slow
-    # pairwise_dist = torch.sum(pairwise_diff ** 2, dim = 2) # square of distance
-    pairwise_diff_square = pairwise_diff * pairwise_diff
-    pairwise_dist = pairwise_diff_square[:, :, 0] + pairwise_diff_square[:, :, 1]
-    repr_matrix = 0.5 * pairwise_dist * torch.log(pairwise_dist)
-    #repr_matrix = 0.5 * pairwise_dist * torch.log(pairwise_dist + 1e-8)
+    pairwise_dist = torch.sum(pairwise_diff ** 2, dim = 2) # square of distance
+    # pairwise_diff_square = pairwise_diff * pairwise_diff
+    # pairwise_dist = pairwise_diff_square[:, :, 0] + pairwise_diff_square[:, :, 1]
+    # repr_matrix = 0.5 * pairwise_dist * torch.log(pairwise_dist)
+    repr_matrix = 0.5 * pairwise_dist * torch.log(pairwise_dist + 1e-8)
     # fix numerical error for 0 * log(0), substitute all nan with 0
     mask = repr_matrix != repr_matrix
     repr_matrix.masked_fill_(mask, 0)
@@ -46,21 +46,20 @@ def bulid_delta_inverse(target_control_points):
     target_control_points: (N, 2)
     '''
     N = target_control_points.shape[0]
+
     forward_kernel = torch.zeros(N + 3, N + 3).to(target_control_points.device)
     target_control_partial_repr = compute_partial_repr(target_control_points, target_control_points)
     forward_kernel[:N, :N].copy_(target_control_partial_repr)
     forward_kernel[:N, -3].fill_(1)
+
+
     forward_kernel[-3, :N].fill_(1)
     forward_kernel[:N, -2:].copy_(target_control_points)
     forward_kernel[-2:, :N].copy_(target_control_points.transpose(0, 1))
     # compute inverse matrix
-    try:
-        inverse_kernel = torch.inverse(forward_kernel)
-    except:
-        print('N is "\n',N)
-        print('target_control_points.shape',target_control_points.shape)
-        print('\n target_control_points:',target_control_points)
-        print('\n forward_kernel is :\n',forward_kernel)
+
+    
+    inverse_kernel = torch.inverse(forward_kernel)
     return inverse_kernel
 
 
@@ -104,7 +103,6 @@ def tps_sampler(target_height, target_width, inverse_kernel, target_coordinate_r
     output_maps = grid_sample(source, grid, mode=sample_mode, canvas=None)
     return output_maps, source_coordinate
 
-
 def tps_spatial_transform(target_height, target_width, target_control_points, 
                           source, source_control_points, sample_mode='bilinear'):
     '''
@@ -112,12 +110,18 @@ def tps_spatial_transform(target_height, target_width, target_control_points,
     source: (B, C, H, W)
     source_control_points: (B, N, 2)
     '''
+    # TODO origin
     inverse_kernel = bulid_delta_inverse(target_control_points)
     target_coordinate_repr = build_target_coordinate_matrix(target_height, target_width, target_control_points)
     
     return tps_sampler(target_height, target_width, inverse_kernel, target_coordinate_repr, 
                        source, source_control_points, sample_mode)
-
+    # #TODO 
+    # warp = tps.WarpTPS()
+    # target_control_points = target_control_points.unsqueeze(0)
+    # print('target_control_points:',target_control_points.shape)
+    # return warp(source, source_control_points,target_control_points),0
+        
 
 class TPSSpatialTransformer(nn.Module):
 
@@ -146,4 +150,3 @@ class TPSSpatialTransformer(nn.Module):
         return tps_sampler(self.target_height, self.target_width,
                            self.inverse_kernel, self.target_coordinate_repr,
                            source, source_control_points)
- 

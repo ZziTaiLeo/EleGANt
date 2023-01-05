@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
+import numpy as np
 from .modules.histogram_matching import histogram_matching
 from .modules.pseudo_gt import fine_align, expand_area, mask_blur
 

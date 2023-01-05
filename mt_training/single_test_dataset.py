@@ -7,16 +7,16 @@ from torch.utils.data import Dataset, DataLoader
 from mt_training.config import get_config
 from mt_training.preprocess import PreProcess
 
-class MakeupDataset(Dataset):
+class SingleMakeupDataset(Dataset):
     def __init__(self, opts, config=None):
-        super(MakeupDataset, self).__init__()
+        super(SingleMakeupDataset, self).__init__()
         if config is None:
             config = get_config()
         self.opts = opts
         self.root = config.DATA.PATH
-        with open(os.path.join(config.DATA.PATH, 'makeup.txt'), 'r') as f:
+        with open(os.path.join('/media/pc/hengda1t/hengda/EleGANt-eg3d/EleGANt/single_input_test', 'single_makeup.txt'), 'r') as f:
             self.makeup_names = [name.strip() for name in f.readlines()]
-        with open(os.path.join(config.DATA.PATH, 'non-makeup.txt'), 'r') as f:
+        with open(os.path.join('/media/pc/hengda1t/hengda/EleGANt-eg3d/EleGANt/single_input_test', 'single_non_makeup.txt'), 'r') as f:
             self.non_makeup_names = [name.strip() for name in f.readlines()]
         self.preprocessor = PreProcess(config, need_parser=False)
         self.img_size = config.DATA.IMG_SIZE
@@ -34,10 +34,8 @@ class MakeupDataset(Dataset):
         return max(len(self.makeup_names), len(self.non_makeup_names))
 
     def __getitem__(self, index):
-        idx_s = torch.randint(0, len(self.non_makeup_names), (1, )).item()
-        idx_r = torch.randint(0, len(self.makeup_names), (1, )).item()
-        name_s = self.non_makeup_names[idx_s]
-        name_r = self.makeup_names[idx_r]
+        name_s = self.non_makeup_names[0]
+        name_r = self.makeup_names[0]
         source = self.load_from_file(name_s)
         reference = self.load_from_file(name_r)
         #TODO add s_latent
@@ -48,7 +46,7 @@ class MakeupDataset(Dataset):
         return source, reference, s_latent, r_latent, base_name_s, base_name_r
 
 def get_loader(config):
-    dataset = MakeupDataset(config)
+    dataset = SingleMakeupDataset(config)
     dataloader = DataLoader(dataset=dataset,
                             batch_size=config.DATA.BATCH_SIZE,
                             num_workers=config.DATA.NUM_WORKERS)
@@ -56,7 +54,7 @@ def get_loader(config):
 
 
 if __name__ == "__main__":
-    dataset = MakeupDataset()
+    dataset = SingleMakeupDataset()
     dataloader = DataLoader(dataset, batch_size=1, num_workers=16)
     for e in range(10):
         for i, (point_s, point_r) in enumerate(dataloader):

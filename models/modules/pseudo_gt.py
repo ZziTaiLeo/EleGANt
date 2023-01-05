@@ -1,19 +1,18 @@
-import cv2
-import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torchvision.transforms import functional
+import numpy as np 
+import cv2
 
 from models.modules.tps_transform import tps_sampler, tps_spatial_transform
-
-
 def expand_area(mask:torch.Tensor, margin:int):
     '''
     mask: (C, H, W) or (N, C, H, W)
     '''
     kernel = np.zeros((margin * 2 + 1, margin * 2 + 1), dtype=np.uint8)
     kernel = cv2.circle(kernel, (margin, margin), margin, (255, 0, 0), -1)
+    kernel = np.zeros((margin * 2 + 1, margin * 2 + 1), dtype=np.uint8)
     kernel = torch.FloatTensor((kernel > 0)).unsqueeze(0).unsqueeze(0).to(mask.device)
     ndim = mask.ndimension()
     if ndim == 3:
@@ -88,8 +87,12 @@ def tps_blend(blend_alpha, img_size, lms_r, lms_s, image_r, image_s=None, mask_r
     '''
     image: (C, H, W), lms: (K, 2), mask:(1, H, W)
     '''
+    #TODO origin
     lms_s = torch.flip(lms_s, dims=[1]) / (img_size - 1)
     lms_r = (torch.flip(lms_r, dims=[1]) / (img_size - 1)).unsqueeze(0)
+
+    # lms_s = lms_s/ (img_size - 1)
+    # lms_r = (lms_r / (img_size - 1)).unsqueeze(0)
     image_r = image_r.unsqueeze(0)
     image_trans, _ = tps_spatial_transform(img_size, img_size, lms_s, image_r, lms_r, sample_mode)
     if mask_r is not None:
@@ -120,6 +123,7 @@ def fine_align(img_size, lms_r, lms_s, image_r, image_s, mask_r, mask_s, margins
     # lip align
     mask_s_lip = expand_area(mask_s[0:1], margins['lip'])
     mask_r_lip = expand_area(mask_r[0:1], margins['lip'])
+    #TODO
     image_s = tps_blend(blend_alphas['lip'], img_size, lms_r[48:], lms_s[48:], image_r, image_s, 
                         mask_r_lip, mask_s_lip, mask_s[0:1], blur_size=3)
 

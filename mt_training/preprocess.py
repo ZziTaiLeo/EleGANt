@@ -1,6 +1,7 @@
 import os
 import sys
 import cv2
+from scipy.ndimage import rotate
 from PIL import Image
 import numpy as np
 import torch
