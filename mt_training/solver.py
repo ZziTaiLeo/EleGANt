@@ -27,6 +27,7 @@ import matplotlib.pyplot as plt
 class Solver():
     def __init__(self, config, opts, logger=None, inference=False):
         self.opts = opts
+        self.config = config
         self.device = torch.device(opts.gpu)
         # load eg3d decoder
         with dnnlib.util.open_url(self.opts.network_pkl) as f:
@@ -40,10 +41,11 @@ class Solver():
         self.D_A = get_discriminator(config)
         if self.double_d:
             self.D_B = get_discriminator(config)
-        self.root = config.DATA.PATH       
         # load camera
         with open(self.opts.dataset_json, 'r') as f:
             self.camera_dic = dict(json.load(f)['labels'])
+
+        self.root = self.opts.dataset_root       
 
         self.best_val_loss  = None
         # load Makeup Transfer Net
@@ -62,7 +64,8 @@ class Solver():
             os.makedirs(self.vis_folder)
         self.vis_freq = config.LOG.VIS_FREQ  # 1 
         self.save_freq = config.LOG.SAVE_FREQ # 10 
-        self.interval_step = opts.image_interval
+        # self.interval_step = opts.image_interval
+        self.interval_step = 200
         # Data & PGT
         self.img_size = config.DATA.IMG_SIZE
         self.margins = {'eye':config.PGT.EYE_MARGIN,
@@ -255,10 +258,138 @@ class Solver():
                 else:
                     parameter.requires_grad = bool(flag)
 
+    def validate(self, test_data_loader):
+        for batch_idx, (source, reference, s_latent, r_latent, s_name, r_name)  in enumerate(test_data_loader):
+            
+            with torch.no_grad():
+                image_s, image_r = source[0].to(self.device), reference[0].to(self.device) # (b, c, h, w)
+                mask_s_full, mask_r_full = source[1].to(self.device), reference[1].to(self.device) # (b, c', h, w) 
+                lms_s, lms_r = source[3].to(self.device), reference[3].to(self.device) # (b, K, 2)
+                c_s = torch.tensor([self.camera_dic[x]
+                            for x in s_name], device=self.device)  # (b,25)
+                c_r = torch.tensor([self.camera_dic[x]
+                            for x in r_name], device=self.device)  # (b,25)
+                self.net_farl.eval()
+                self.fusion.eval()
+                print('\n ===========now input is :',s_name[0]+'  ====================\n')
+                print('now  reference is :',r_name[0])
+                # farl使用
+                s_Image = [Image.open(os.path.join(
+                    self.root, 'images/non-makeup', s_name[i])) for i in range(self.opts.batch_size)]
 
-    def train(self, data_loader):
-        self.len_dataset = len(data_loader)
+                r_Image = [Image.open(os.path.join(
+                    self.root, 'images/makeup', r_name[i])) for i in range(self.opts.batch_size)]
+                # Inversion
+                inversion_A = self.forward(s_latent[0],c_s[0].unsqueeze(0))
+                inversion_B = self.forward(r_latent[0],c_r[0].unsqueeze(0))
         
+                # ================= Generate ================== #
+                fake_A = self.get_syn(s_latent,r_Image,c_s)
+                fake_B = self.get_syn(r_latent,s_Image,c_r)
+
+                pgt_A = self.pgt_maker(image_s, image_r, mask_s_full, mask_r_full, lms_s, lms_r)
+                pgt_B = self.pgt_maker(image_r, image_s, mask_r_full, mask_s_full, lms_r, lms_s)
+
+                #cal_loss 
+                g_loss,loss_tmp = self.cal_loss(s_Image,r_Image,image_s,image_r,c_s,c_r,
+                fake_A,fake_B,pgt_A,pgt_B,mask_s_full, mask_r_full)
+
+        
+        self.net_farl.train()
+        self.fusion.train()
+        return loss_tmp
+           
+    def cal_loss(self,s_Image,r_Image,image_s,image_r,c_s,c_r,
+                 fake_A,fake_B,pgt_A,pgt_B,mask_s_full, mask_r_full,loss_tmp):
+# ================== Train G ================== #
+        
+        # G should be identity if ref_B or org_A is fed
+        idt_A = self.rec_img(fake_A,s_Image,c_s)
+        idt_B = self.rec_img(fake_B,r_Image,c_r)
+        loss_idt_A = self.criterionL1(idt_A, image_s) * self.lambda_A * self.lambda_idt
+        loss_idt_B = self.criterionL1(idt_B, image_r) * self.lambda_B * self.lambda_idt
+        # loss_idt
+        loss_idt = (loss_idt_A + loss_idt_B) * 0.5
+
+        # GAN loss D_A(G_A(A))
+        pred_fake = self.D_A(fake_A)
+        g_A_loss_adv = self.criterionGAN(pred_fake, True)
+
+        # GAN loss D_B(G_B(B))
+        if self.double_d:
+            pred_fake = self.D_B(fake_B)
+        else:
+            pred_fake = self.D_A(fake_B)
+        g_B_loss_adv = self.criterionGAN(pred_fake, True)
+        
+        # Makeup loss
+        g_A_loss_pgt = 0; g_B_loss_pgt = 0
+        
+        g_A_lip_loss_pgt = self.criterionPGT(fake_A, pgt_A, mask_s_full[:,0:1]) * self.lambda_lip
+        g_B_lip_loss_pgt = self.criterionPGT(fake_B, pgt_B, mask_r_full[:,0:1]) * self.lambda_lip
+        g_A_loss_pgt += g_A_lip_loss_pgt
+        g_B_loss_pgt += g_B_lip_loss_pgt
+
+        mask_s_eye = expand_area(mask_s_full[:,2:4].sum(dim=1, keepdim=True), self.margins['eye'])
+        mask_r_eye = expand_area(mask_r_full[:,2:4].sum(dim=1, keepdim=True), self.margins['eye'])
+        mask_s_eye = mask_s_eye * mask_s_full[:,1:2]
+        mask_r_eye = mask_r_eye * mask_r_full[:,1:2]
+        g_A_eye_loss_pgt = self.criterionPGT(fake_A, pgt_A, mask_s_eye) * self.lambda_eye
+        g_B_eye_loss_pgt = self.criterionPGT(fake_B, pgt_B, mask_r_eye) * self.lambda_eye
+        g_A_loss_pgt += g_A_eye_loss_pgt
+        g_B_loss_pgt += g_B_eye_loss_pgt
+        
+        mask_s_skin = mask_s_full[:,1:2] * (1 - mask_s_eye)
+        mask_r_skin = mask_r_full[:,1:2] * (1 - mask_r_eye)
+        g_A_skin_loss_pgt = self.criterionPGT(fake_A, pgt_A, mask_s_skin) * self.lambda_skin
+        g_B_skin_loss_pgt = self.criterionPGT(fake_B, pgt_B, mask_r_skin) * self.lambda_skin
+        g_A_loss_pgt += g_A_skin_loss_pgt
+        g_B_loss_pgt += g_B_skin_loss_pgt
+        
+        # cycle loss
+        rec_A = self.rec_img(fake_A, s_Image,c_s)
+        rec_B = self.rec_img(fake_B, r_Image,c_r)
+        g_loss_rec_A = self.criterionL1(rec_A, image_s) * self.lambda_A
+        g_loss_rec_B = self.criterionL1(rec_B, image_r) * self.lambda_B
+
+        # vgg loss
+        vgg_s = self.vgg(image_s).detach()
+        vgg_fake_A = self.vgg(fake_A)
+        g_loss_A_vgg = self.criterionL1(vgg_fake_A, vgg_s) * self.lambda_A * self.lambda_vgg
+
+        vgg_r = self.vgg(image_r).detach()
+        vgg_fake_B = self.vgg(fake_B)
+        g_loss_B_vgg = self.criterionL1(vgg_fake_B, vgg_r) * self.lambda_B * self.lambda_vgg
+
+        loss_rec = (g_loss_rec_A + g_loss_rec_B + g_loss_A_vgg + g_loss_B_vgg) * 0.5
+
+        # Combined loss
+        g_loss = g_A_loss_adv + g_B_loss_adv + loss_rec + loss_idt + g_A_loss_pgt + g_B_loss_pgt
+        # g_loss = loss_rec + loss_idt + g_A_loss_pgt + g_B_loss_pgt
+
+
+        print('loss_adv_A',g_A_loss_adv)
+        print('loss_adv_B',g_B_loss_adv)
+        print('loss_rec:',loss_rec)
+        print('loss_idt:',loss_idt)
+        print('loss_pgt_A:',g_A_loss_adv)
+        print('loss_pgt_B:',g_B_loss_adv)
+        # Logging
+        loss_tmp['G-A-loss-adv'] += g_A_loss_adv.item()
+        loss_tmp['G-B-loss-adv'] += g_B_loss_adv.item()
+        loss_tmp['G-loss-idt'] += loss_idt.item()
+        loss_tmp['G-loss-img-rec'] += (g_loss_rec_A + g_loss_rec_B).item() * 0.5
+        loss_tmp['G-loss-vgg-rec'] += (g_loss_A_vgg + g_loss_B_vgg).item() * 0.5
+        loss_tmp['G-loss-rec'] += loss_rec.item()
+        loss_tmp['G-loss-skin-pgt'] += (g_A_skin_loss_pgt + g_B_skin_loss_pgt).item()
+        loss_tmp['G-loss-eye-pgt'] += (g_A_eye_loss_pgt + g_B_eye_loss_pgt).item()
+        loss_tmp['G-loss-lip-pgt'] += (g_A_lip_loss_pgt + g_B_lip_loss_pgt).item()
+        loss_tmp['G-loss-pgt'] += (g_A_loss_pgt + g_B_loss_pgt).item()
+        return g_loss, loss_tmp 
+        
+    def train(self, train_data_loader):
+        self.len_train_dataset = len(train_data_loader)
+
         for self.epoch in range(1, self.num_epochs + 1):
             
             self.start_time = time.time()
@@ -268,226 +399,139 @@ class Solver():
             losses_G = []
             losses_D_A = []
             losses_D_B = []
-            with tqdm(data_loader, desc="training") as pbar:
+            with tqdm(train_data_loader, desc="training") as pbar:
                 for step, (source, reference, s_latent, r_latent, s_name, r_name) in enumerate(pbar):
                     # image, mask, diff, lms
                     # if (step==2):exit()
-                    
-                        image_s, image_r = source[0].to(self.device), reference[0].to(self.device) # (b, c, h, w)
-                        mask_s_full, mask_r_full = source[1].to(self.device), reference[1].to(self.device) # (b, c', h, w) 
-                        lms_s, lms_r = source[3].to(self.device), reference[3].to(self.device) # (b, K, 2)
-                        c_s = torch.tensor([self.camera_dic[x]
-                                    for x in s_name], device=self.device)  # (b,25)
-                        c_r = torch.tensor([self.camera_dic[x]
-                                    for x in r_name], device=self.device)  # (b,25)
-                        print('\n ===========now input is :',s_name[0]+'  ====================\n')
-                        print('now  reference is :',r_name[0])
-                        # farl使用
-                        s_Image = [Image.open(os.path.join(
-                            self.root, 'images/non-makeup', s_name[i])) for i in range(self.opts.batch_size)]
+                    image_s, image_r = source[0].to(self.device), reference[0].to(self.device) # (b, c, h, w)
+                    mask_s_full, mask_r_full = source[1].to(self.device), reference[1].to(self.device) # (b, c', h, w) 
+                    lms_s, lms_r = source[3].to(self.device), reference[3].to(self.device) # (b, K, 2)
+                    c_s = torch.tensor([self.camera_dic[x]
+                                for x in s_name], device=self.device)  # (b,25)
+                    c_r = torch.tensor([self.camera_dic[x]
+                                for x in r_name], device=self.device)  # (b,25)
+                    print('\n ===========now input is :',s_name[0]+'  ====================\n')
+                    print('now  reference is :',r_name[0])
+                    # farl使用
+                    s_Image = [Image.open(os.path.join(
+                        self.root, 'images/non-makeup', s_name[i])) for i in range(self.opts.batch_size)]
 
-                        r_Image = [Image.open(os.path.join(
-                            self.root, 'images/makeup', r_name[i])) for i in range(self.opts.batch_size)]
-                        # Inversion
-                        inversion_A = self.forward(s_latent[0],c_s[0].unsqueeze(0))
-                
-                        # ================= Generate ================== #
-                        fake_A = self.get_syn(s_latent,r_Image,c_s)
-                        fake_B = self.get_syn(r_latent,s_Image,c_r)
+                    r_Image = [Image.open(os.path.join(
+                        self.root, 'images/makeup', r_name[i])) for i in range(self.opts.batch_size)]
+                    # Inversion
+                    inversion_A = self.forward(s_latent[0],c_s[0].unsqueeze(0))
+                    inversion_B = self.forward(r_latent[0],c_r[0].unsqueeze(0))
+            
+                    # ================= Generate ================== #
+                    fake_A = self.get_syn(s_latent,r_Image,c_s)
+                    fake_B = self.get_syn(r_latent,s_Image,c_r)
 
-                        # =========== reconstruct ==========
+                    # generate pseudo ground truth
 
-                        synthesis_img = [self.forward(s_latent[i, :, :, :], c_s[i, :].unsqueeze(
-                            0)) for i in range(self.opts.batch_size)]
-                        synthesis_img = torch.stack(synthesis_img,dim=0).squeeze(dim=1)
+                    # pgt_A = self.pgt_maker(image_s, image_r, mask_s_full, mask_r_full, lms_s, lms_r)
+                    # pgt_B = self.pgt_maker(image_r, image_s, mask_r_full, mask_s_full, lms_r, lms_s)
+                    try:
+                        pgt_A = self.pgt_maker(image_s, image_r, mask_s_full, mask_r_full, lms_s, lms_r)
+                    except:
+                        print('error tps : ','makeup/{}'.format(r_name[0]))
+                        with open('/media/pc/hengda1t/hengda/EleGANt-eg3d/EleGANt/crop_error_img_1.txt','a') as f:
+                            f.write(f'makeup/{r_name[0]}\n')
 
-                        # generate pseudo ground truth
+                        torch.cuda.empty_cache()
+                        continue
+                    try:    
+                        pgt_B = self.pgt_maker(image_r, image_s, mask_r_full, mask_s_full, lms_r, lms_s)
+                    except:
+                        print('error tps : ','non-makeup/{}'.format(s_name[0]))
+                        with open('/media/pc/hengda1t/hengda/EleGANt-eg3d/EleGANt/crop_error_img_1.txt','a') as f:
+                            f.write(f'non-makeup/{s_name[0]}\n')
+                        
+                        torch.cuda.empty_cache()
+                        continue 
+                    # ================== Train D ================== #
+                    # training D_A, D_A aims to distinguish class B
+                    # Real
+                    out = self.D_A(image_r)
+                    d_loss_real = self.criterionGAN(out, True)
+                    # Fake
+                    out = self.D_A(fake_A.detach())
+                    d_loss_fake =  self.criterionGAN(out, False)
 
-                        # pgt_A = self.pgt_maker(image_s, image_r, mask_s_full, mask_r_full, lms_s, lms_r)
-                        # pgt_B = self.pgt_maker(image_r, image_s, mask_r_full, mask_s_full, lms_r, lms_s)
-                        try:
-                            pgt_A = self.pgt_maker(image_s, image_r, mask_s_full, mask_r_full, lms_s, lms_r)
-                        except:
-                            print('error tps : ','makeup/{}'.format(r_name[0]))
-                            with open('/media/pc/hengda1t/hengda/EleGANt-eg3d/EleGANt/crop_error_img_1.txt','a') as f:
-                                f.write(f'makeup/{r_name[0]}\n')
+                    # Backward + Optimize
+                    d_loss = (d_loss_real + d_loss_fake) * 0.5
+                    self.d_A_optimizer.zero_grad()
+                    d_loss.backward()
+                    self.d_A_optimizer.step()                   
 
-                            torch.cuda.empty_cache()
-                            continue
-                        try:    
-                            pgt_B = self.pgt_maker(image_r, image_s, mask_r_full, mask_s_full, lms_r, lms_s)
-                        except:
-                            print('error tps : ','non-makeup/{}'.format(s_name[0]))
-                            with open('/media/pc/hengda1t/hengda/EleGANt-eg3d/EleGANt/crop_error_img_1.txt','a') as f:
-                                f.write(f'non-makeup/{s_name[0]}\n')
-                            
-                            torch.cuda.empty_cache()
-                            continue 
-                        ================== Train D ================== #
-                        # training D_A, D_A aims to distinguish class B
-                        # Real
-                        out = self.D_A(image_r)
-                        d_loss_real = self.criterionGAN(out, True)
-                        # Fake
-                        out = self.D_A(fake_A.detach())
-                        d_loss_fake =  self.criterionGAN(out, False)
+                    # Logging
+                    loss_tmp['D-A-loss_real'] += d_loss_real.item()
+                    loss_tmp['D-A-loss_fake'] += d_loss_fake.item()
+                    losses_D_A.append(d_loss.item())
 
-                        # Backward + Optimize
-                        d_loss = (d_loss_real + d_loss_fake) * 0.5
+                    # training D_B, D_B aims to distinguish class A
+                    # Real
+                    if self.double_d:
+                        out = self.D_B(image_s)
+                    else:
+                        out = self.D_A(image_s)
+                    d_loss_real = self.criterionGAN(out, True)
+                    # Fake
+                    if self.double_d:
+                        out = self.D_B(fake_B.detach())
+                    else:
+                        out = self.D_A(fake_B.detach())
+                    d_loss_fake =  self.criterionGAN(out, False)
+
+                    # Backward + Optimize
+                    d_loss = (d_loss_real+ d_loss_fake) * 0.5
+                    if self.double_d:
+                        self.d_B_optimizer.zero_grad()
+                        d_loss.backward()
+                        self.d_B_optimizer.step()
+                    else:
                         self.d_A_optimizer.zero_grad()
                         d_loss.backward()
-                        self.d_A_optimizer.step()                   
+                        self.d_A_optimizer.step()
 
-                        # Logging
-                        loss_tmp['D-A-loss_real'] += d_loss_real.item()
-                        loss_tmp['D-A-loss_fake'] += d_loss_fake.item()
-                        losses_D_A.append(d_loss.item())
+                    # Logging
+                    loss_tmp['D-B-loss_real'] += d_loss_real.item()
+                    loss_tmp['D-B-loss_fake'] += d_loss_fake.item()
+                    losses_D_B.append(d_loss.item())
 
-                        # training D_B, D_B aims to distinguish class A
-                        # Real
-                        if self.double_d:
-                            out = self.D_B(image_s)
-                        else:
-                            out = self.D_A(image_s)
-                        d_loss_real = self.criterionGAN(out, True)
-                        # Fake
-                        if self.double_d:
-                            out = self.D_B(fake_B.detach())
-                        else:
-                            out = self.D_A(fake_B.detach())
-                        d_loss_fake =  self.criterionGAN(out, False)
+                    #cal_loss 
+                    g_loss,loss_tmp = self.cal_loss(s_Image,r_Image,image_s,image_r,c_s,c_r,
+                    fake_A,fake_B,pgt_A,pgt_B,mask_s_full, mask_r_full,loss_tmp)
 
-                        # Backward + Optimize
-                        d_loss = (d_loss_real+ d_loss_fake) * 0.5
-                        if self.double_d:
-                            self.d_B_optimizer.zero_grad()
-                            d_loss.backward()
-                            self.d_B_optimizer.step()
-                        else:
-                            self.d_A_optimizer.zero_grad()
-                            d_loss.backward()
-                            self.d_A_optimizer.step()
-
-                        # Logging
-                        loss_tmp['D-B-loss_real'] += d_loss_real.item()
-                        loss_tmp['D-B-loss_fake'] += d_loss_fake.item()
-                        losses_D_B.append(d_loss.item())
-
-                        # ================== Train G ================== #
-                        
-                        # G should be identity if ref_B or org_A is fed
-                        idt_A = self.rec_img(fake_A,s_Image,c_s)
-                        idt_B = self.rec_img(fake_B,r_Image,c_r)
-                        loss_idt_A = self.criterionL1(idt_A, image_s) * self.lambda_A * self.lambda_idt
-                        loss_idt_B = self.criterionL1(idt_B, image_r) * self.lambda_B * self.lambda_idt
-                        # loss_idt
-                        loss_idt = (loss_idt_A + loss_idt_B) * 0.5
-
-                        # GAN loss D_A(G_A(A))
-                        pred_fake = self.D_A(fake_A)
-                        g_A_loss_adv = self.criterionGAN(pred_fake, True)
-
-                        # GAN loss D_B(G_B(B))
-                        if self.double_d:
-                            pred_fake = self.D_B(fake_B)
-                        else:
-                            pred_fake = self.D_A(fake_B)
-                        g_B_loss_adv = self.criterionGAN(pred_fake, True)
-                        
-                        # Makeup loss
-                        g_A_loss_pgt = 0; g_B_loss_pgt = 0
-                        
-                        g_A_lip_loss_pgt = self.criterionPGT(fake_A, pgt_A, mask_s_full[:,0:1]) * self.lambda_lip
-                        g_B_lip_loss_pgt = self.criterionPGT(fake_B, pgt_B, mask_r_full[:,0:1]) * self.lambda_lip
-                        g_A_loss_pgt += g_A_lip_loss_pgt
-                        g_B_loss_pgt += g_B_lip_loss_pgt
-
-                        mask_s_eye = expand_area(mask_s_full[:,2:4].sum(dim=1, keepdim=True), self.margins['eye'])
-                        mask_r_eye = expand_area(mask_r_full[:,2:4].sum(dim=1, keepdim=True), self.margins['eye'])
-                        mask_s_eye = mask_s_eye * mask_s_full[:,1:2]
-                        mask_r_eye = mask_r_eye * mask_r_full[:,1:2]
-                        g_A_eye_loss_pgt = self.criterionPGT(fake_A, pgt_A, mask_s_eye) * self.lambda_eye
-                        g_B_eye_loss_pgt = self.criterionPGT(fake_B, pgt_B, mask_r_eye) * self.lambda_eye
-                        g_A_loss_pgt += g_A_eye_loss_pgt
-                        g_B_loss_pgt += g_B_eye_loss_pgt
-                        
-                        mask_s_skin = mask_s_full[:,1:2] * (1 - mask_s_eye)
-                        mask_r_skin = mask_r_full[:,1:2] * (1 - mask_r_eye)
-                        g_A_skin_loss_pgt = self.criterionPGT(fake_A, pgt_A, mask_s_skin) * self.lambda_skin
-                        g_B_skin_loss_pgt = self.criterionPGT(fake_B, pgt_B, mask_r_skin) * self.lambda_skin
-                        g_A_loss_pgt += g_A_skin_loss_pgt
-                        g_B_loss_pgt += g_B_skin_loss_pgt
-                        
-                        # cycle loss
-                        rec_A = self.rec_img(fake_A, s_Image,c_s)
-                        rec_B = self.rec_img(fake_B, r_Image,c_r)
-                        g_loss_rec_A = self.criterionL1(rec_A, image_s) * self.lambda_A
-                        g_loss_rec_B = self.criterionL1(rec_B, image_r) * self.lambda_B
-
-                        # vgg loss
-                        vgg_s = self.vgg(image_s).detach()
-                        vgg_fake_A = self.vgg(fake_A)
-                        g_loss_A_vgg = self.criterionL1(vgg_fake_A, vgg_s) * self.lambda_A * self.lambda_vgg
-
-                        vgg_r = self.vgg(image_r).detach()
-                        vgg_fake_B = self.vgg(fake_B)
-                        g_loss_B_vgg = self.criterionL1(vgg_fake_B, vgg_r) * self.lambda_B * self.lambda_vgg
-
-                        loss_rec = (g_loss_rec_A + g_loss_rec_B + g_loss_A_vgg + g_loss_B_vgg) * 0.5
-
-                        # Combined loss
-                        g_loss = g_A_loss_adv + g_B_loss_adv + loss_rec + loss_idt + g_A_loss_pgt + g_B_loss_pgt
-                        # g_loss = loss_rec + loss_idt + g_A_loss_pgt + g_B_loss_pgt
-
-
-                        print('loss_adv_A',g_A_loss_adv)
-                        print('loss_adv_B',g_B_loss_adv)
-                        print('loss_rec:',loss_rec)
-                        print('loss_idt:',loss_idt)
-                        print('loss_pgt_A:',g_A_loss_adv)
-                        print('loss_pgt_B:',g_B_loss_adv)
-                        self.g_optimizer.zero_grad()
-                        # self.print_value(self.net_farl)
-                        # self.print_value(self.fusion)
-                        # with torch.autograd.detect_anomaly():
-                        g_loss.backward()
-                        self.g_optimizer.step()
-                        print('==========更新梯度后==========')
-                        # self.print_value(self.net_farl)
-                        # self.print_value(self.fusion)
-                        # Logging
-                        loss_tmp['G-A-loss-adv'] += g_A_loss_adv.item()
-                        loss_tmp['G-B-loss-adv'] += g_B_loss_adv.item()
-                        loss_tmp['G-loss-idt'] += loss_idt.item()
-                        loss_tmp['G-loss-img-rec'] += (g_loss_rec_A + g_loss_rec_B).item() * 0.5
-                        loss_tmp['G-loss-vgg-rec'] += (g_loss_A_vgg + g_loss_B_vgg).item() * 0.5
-                        loss_tmp['G-loss-rec'] += loss_rec.item()
-                        loss_tmp['G-loss-skin-pgt'] += (g_A_skin_loss_pgt + g_B_skin_loss_pgt).item()
-                        loss_tmp['G-loss-eye-pgt'] += (g_A_eye_loss_pgt + g_B_eye_loss_pgt).item()
-                        loss_tmp['G-loss-lip-pgt'] += (g_A_lip_loss_pgt + g_B_lip_loss_pgt).item()
-                        loss_tmp['G-loss-pgt'] += (g_A_loss_pgt + g_B_loss_pgt).item()
-                        losses_G.append(g_loss.item())
-                        pbar.set_description("Epoch: %d, Step: %d, Loss_G: %0.4f, Loss_D_A: %0.4f, Loss_D_B: %0.4f" % \
-                                    (self.epoch, step + 1, np.mean(losses_G), np.mean(losses_D_A), np.mean(losses_D_B)))
-                        #save the images during a epoch
-                        if (step) % self.interval_step == 0:
-                            self.vis_train([self.tensor2im(image_s.detach().cpu()),
-                                    self.tensor2im(inversion_A.detach().cpu()),
-                                    self.tensor2im(image_r.detach().cpu()),
-                                    self.tensor2im(fake_A.detach().cpu()),
-                                    self.tensor2im(pgt_A.detach().cpu())],
-                                    s_name, r_name, step=step+1
-                                    )
-                        # print('error input is :',s_name[0])
+                    self.g_optimizer.zero_grad()
+                    g_loss.backward()
+                    self.g_optimizer.step()
+                    losses_G.append(g_loss.item())
+                    pbar.set_description("Epoch: %d, Step: %d, Loss_G: %0.4f, Loss_D_A: %0.4f, Loss_D_B: %0.4f" % \
+                                (self.epoch, step + 1, np.mean(losses_G), np.mean(losses_D_A), np.mean(losses_D_B)))
+                    #save the images during a epoch
+                    if (step) % self.interval_step == 0 or (g_loss > 60) :
+                        self.vis_train([[self.tensor2im(image_s.detach().cpu()),
+                                self.tensor2im(inversion_A.detach().cpu()),
+                                self.tensor2im(image_r.detach().cpu()),
+                                self.tensor2im(fake_A.detach().cpu()),
+                                self.tensor2im(pgt_A.detach().cpu())],
+                                    [self.tensor2im(image_r.detach().cpu()),
+                                self.tensor2im(inversion_B.detach().cpu()),
+                                self.tensor2im(image_s.detach().cpu()),
+                                self.tensor2im(fake_B.detach().cpu()),
+                                self.tensor2im(pgt_B.detach().cpu())]],
+                                s_name, r_name, step=step+1
+                                )
+                    
+                    # print('error input is :',s_name[0])
             self.end_time = time.time()
             for k, v in loss_tmp.items():
-                loss_tmp[k] = v / self.len_dataset  
+                loss_tmp[k] = v / self.len_train_dataset  
             loss_tmp['G-loss'] = np.mean(losses_G)
             loss_tmp['D-A-loss'] = np.mean(losses_D_A)
             loss_tmp['D-B-loss'] = np.mean(losses_D_B)
             self.log_loss(loss_tmp)
             self.plot_loss()
-
             # Decay learning rate
             self.g_scheduler.step()
             self.d_A_scheduler.step()
@@ -496,17 +540,6 @@ class Solver():
 
             if self.pgt_annealing:
                 self.pgt_maker.step()
-
-            #save the images
-            # if (self.epoch) % self.vis_freq == 0:
-            #     self.vis_train([self.tensor2im(image_s.detach().cpu()),
-            #             self.tensor2im(inversion_A.detach().cpu()),
-            #             self.tensor2im(image_r.detach().cpu()),
-            #             self.tensor2im(fake_A.detach().cpu()),
-            #             self.tensor2im(pgt_A.detach().cpu())],
-            #             s_name, r_name, step=step+1
-            #             )
-            #                   rec_A.detach().cpu()])
 
             # Save model checkpoints
             if (self.epoch) % self.save_freq == 0:
@@ -593,25 +626,28 @@ class Solver():
                 print('loaded trained discriminator B {}..!'.format(D_B_path))
     def __get_save_dict(self):
         save_dict = {
-            'state_dict': self.net.state_dict(),
-            'opts': vars(self.opts)
+            'opts': vars(self.opts),
         }
-
+        save_dict['net_farl'] = self.net_farl.state_dict() 
+        save_dict['net_fusion'] = self.fusion.state_dict() 
         if self.opts.save_training_data:  # Save necessary information to enable training continuation from checkpoint
             save_dict['epoch'] = self.epoch
-            save_dict['optimizer'] = self.optimizer.state_dict()
+            save_dict['optimizer'] = self.g_optimizer.state_dict()
             save_dict['best_val_loss'] = self.best_val_loss
-            if self.opts.w_discriminator_lambda > 0:
-                save_dict['discriminator_state_dict'] = self.discriminator.state_dict()
-                save_dict['discriminator_optimizer_state_dict'] = self.discriminator_optimizer.state_dict()
+            save_dict['D_A'] = self.D_A.state_dict()
+            save_dict['D_A_optimizer'] = self.d_A_optimizer.state_dict()
+            if self.double_d:
+                save_dict['D_B'] = self.D_B.state_dict()
+                save_dict['D_B_optimizer'] = self.d_B_optimizer.state_dict()
         return save_dict
+
     def save_models(self,loss_dict, is_best):
         save_dir = os.path.join(self.save_folder, 'epoch_{:d}'.format(self.epoch))
         if not os.path.exists(save_dir):
             os.makedirs(save_dir)
-        save_name = 'best_model.pt' if is_best else 'epoch_{}.pt'.format(self.epoch)
-        torch.save(self.G.state_dict(), os.path.join(save_dir, save_name))
-        torch.save(self.D_A.state_dict(), os.path.join(save_dir, 'D_A.pt'))
+        save_name = 'best_mt_model.pt' if is_best else 'epoch_{}.pt'.format(self.epoch)
+        save_dict = self.__get_save_dict()
+        torch.save(save_dict, os.path.join(save_dir, save_name))
         if self.double_d:
             torch.save(self.D_B.state_dict(), os.path.join(save_dir, 'D_B.pt'))
         with open(os.path.join(self.save_folder, 'timestamp.txt'), 'a') as f:
@@ -625,17 +661,21 @@ class Solver():
         out = (x + 1) / 2
         return out.clamp(0, 1)
     
-    def vis_train(self,img_train_batch, name_s,name_r,step=None):
-        # saving training results
-        name_s = name_s[0].replace('.png','.jpg')
+    def vis_train(self,img_train_batch, name_s,name_r,step=None,display_count=2):
         
-        display_count=1
-        print(img_train_batch)
-        fig = plt.figure(figsize=(5*len(img_train_batch),8*display_count ))
-        gs = fig.add_gridspec(display_count,len(img_train_batch))
+        # saving training results
+        #plt 仅支持jpg
+        name_s = name_s[0].replace('.png','.jpg')
+        name_r = name_r[0].replace('.png','.jpg')
+        name = [[name_s,name_r],[name_r,name_s]]
+
+        fig = plt.figure(figsize=(5*len(img_train_batch[0]),8*display_count ))
+        gs = fig.add_gridspec(display_count,len(img_train_batch[0]))
+
         for i in range(display_count):
             fig.add_subplot(gs[i,0])
-            self.vis_face(img_train_batch,fig,gs,i,name_s,name_r)
+            self.vis_face(img_train_batch[i],fig,gs,i,name[i][0],name[i][1])
+        
         plt.tight_layout()
         save_dir = os.path.join(self.vis_folder,f'epoch_{self.epoch}')
         os.makedirs(save_dir,exist_ok=True)

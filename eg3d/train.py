@@ -18,14 +18,12 @@ def main(config, args):
     logger.info(config)
     
     print('loading dataset...')
-    dataset = MakeupDataset(args,config)
-    data_loader = DataLoader(dataset, batch_size=config.DATA.BATCH_SIZE, num_workers=config.DATA.NUM_WORKERS, shuffle=True)
-    
-
+    train_dataset = MakeupDataset(args,config,is_train=True)
+    train_data_loader = DataLoader(train_dataset, batch_size=config.DATA.BATCH_SIZE, num_workers=config.DATA.NUM_WORKERS, shuffle=True)
 
     solver = Solver(config, args, logger)
     print('training...')
-    solver.train(data_loader)
+    solver.train(train_data_loader)
     
 
 if __name__ == "__main__":
@@ -36,7 +34,6 @@ if __name__ == "__main__":
     parser.add_argument("--load_folder", type=str, help="path to load model", 
                         default=None)
     parser.add_argument("--keepon", default=False, action="store_true", help='keep on training')
-
     parser.add_argument("--gpu", default='2', type=str, help="GPU id to use.")
 
 
@@ -47,6 +44,27 @@ if __name__ == "__main__":
     parser.add_argument('--test_workers', default=4, type=int,
                                 help='Number of test/inference dataloader workers')
 
+    # RESUME 
+    parser.add_argument('--sub_exp_dir', default=None, type=str, help='Name of sub experiment directory')
+    parser.add_argument('--keep_optimizer', action='store_true',
+                                help='Whether to continue from the checkpoint\'s optimizer')
+
+    # DATA
+    parser.add_argument('--dataset_root', default='/media/pc/hengda1t/hengda/datasets/MT-Dataset-crop/', type=str, help='root of your datasets')
+    parser.add_argument('--dataset_json',default='/media/pc/hengda1t/hengda/datasets/MT-Dataset-crop/all_mt_dataset.json',help='path/to/your_no_makeup/dataset.json')
+    parser.add_argument('--resume_training_from_ckpt', default=None, type=str,
+                                help='Path to training checkpoint, works when --save_training_data was set to True')
+    parser.add_argument('--source_latents',default='/media/pc/hengda1t/hengda/datasets/latents/non-makeup/',help='path/to/your_no_makeup/dataset.json')
+    parser.add_argument('--reference_latents',default='/media/pc/hengda1t/hengda/datasets/latents/makeup/',help='path/to/your_no_makeup/dataset.json')
+    #NET
+    parser.add_argument('--ckpt',default='../pretrained_models/ft_on_mt_58w.pt',help='path/to/your_no_makeup/dataset.json')
+    parser.add_argument('--network_pkl',default='../pretrained_models/ffhq512-128.pkl',help='path/to/your/eg3d_generator_pkl')
+    parser.add_argument('--update_param_list', nargs='+', type=str, default=None,
+                                help="Name of training parameters to update the loaded training checkpoint")
+    parser.add_argument('--is_training',default=True,help='state')
+    parser.add_argument('--save_training_data', action='store_true',
+                                help='Save intermediate training data to resume training from the checkpoint')
+    parser.add_argument('--use_checkpoint',default=True,help='speed up in your training')
     parser.add_argument('--optim_name', default='ranger', type=str, help='Which optimizer to use')
     parser.add_argument('--max_steps', default=200000, type=int, help='Maximum number of training steps')
     parser.add_argument('--image_interval', default=200, type=int,
@@ -55,24 +73,6 @@ if __name__ == "__main__":
                                 help='Interval for logging metrics to tensorboard')
     parser.add_argument('--val_interval', default=1000, type=int, help='Validation interval')
     parser.add_argument('--save_interval', default=None, type=int, help='Model checkpoint interval')
-
-    # Save additional training info to enable future training continuation from produced checkpoints
-    parser.add_argument('--save_training_data', action='store_true',
-                                help='Save intermediate training data to resume training from the checkpoint')
-    parser.add_argument('--sub_exp_dir', default=None, type=str, help='Name of sub experiment directory')
-    parser.add_argument('--keep_optimizer', action='store_true',
-                                help='Whether to continue from the checkpoint\'s optimizer')
-    parser.add_argument('--resume_training_from_ckpt', default=None, type=str,
-                                help='Path to training checkpoint, works when --save_training_data was set to True')
-    parser.add_argument('--update_param_list', nargs='+', type=str, default=None,
-                                help="Name of training parameters to update the loaded training checkpoint")
-    parser.add_argument('--network_pkl',default='../pretrained_models/ffhq512-128.pkl',help='path/to/your/eg3d_generator_pkl')
-    parser.add_argument('--dataset_json',default='/media/pc/hengda1t/hengda/datasets/MT-Dataset-crop/all_mt_dataset.json',help='path/to/your_no_makeup/dataset.json')
-    parser.add_argument('--source_latents',default='/media/pc/hengda1t/hengda/datasets/latents/non-makeup/',help='path/to/your_no_makeup/dataset.json')
-    parser.add_argument('--reference_latents',default='/media/pc/hengda1t/hengda/datasets/latents/makeup/',help='path/to/your_no_makeup/dataset.json')
-    parser.add_argument('--ckpt',default='../pretrained_models/ft_on_mt_58w.pt',help='path/to/your_no_makeup/dataset.json')
-    parser.add_argument('--is_training',default=True,help='state')
-    parser.add_argument('--use_checkpoint',default=True,help='speed up in your training')
     args = parser.parse_args()
     config = get_config()
     

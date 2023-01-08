@@ -8,26 +8,32 @@ from mt_training.config import get_config
 from mt_training.preprocess import PreProcess
 
 class MakeupDataset(Dataset):
-    def __init__(self, opts, config=None):
+    def __init__(self, opts, config=None, is_train=True):
         super(MakeupDataset, self).__init__()
         if config is None:
             config = get_config()
         self.opts = opts
-        self.root = config.DATA.PATH
-        with open(os.path.join(config.DATA.PATH, 'makeup.txt'), 'r') as f:
-            self.makeup_names = [name.strip() for name in f.readlines()]
-        with open(os.path.join(config.DATA.PATH, 'non-makeup.txt'), 'r') as f:
-            self.non_makeup_names = [name.strip() for name in f.readlines()]
+        self.dataset_root = self.opts.dataset_root 
+        if is_train:
+            with open(os.path.join(self.dataset_root, 'makeup.txt'), 'r') as f:
+                self.makeup_names = [name.strip() for name in f.readlines()]
+            with open(os.path.join(self.dataset_root, 'non-makeup.txt'), 'r') as f:
+                self.non_makeup_names = [name.strip() for name in f.readlines()]
+        else:
+            with open(os.path.join(self.dataset_root, 'test-makeup.txt'), 'r') as f:
+                self.makeup_names = [name.strip() for name in f.readlines()]
+            with open(os.path.join(self.dataset_root, 'test-non-makeup.txt'), 'r') as f:
+                self.non_makeup_names = [name.strip() for name in f.readlines()]
         self.preprocessor = PreProcess(config, need_parser=False)
         self.img_size = config.DATA.IMG_SIZE
         self.source_latents = self.opts.source_latents
         self.reference_latens = self.opts.reference_latents
 
     def load_from_file(self, img_name):
-        image = Image.open(os.path.join(self.root, 'images', img_name)).convert('RGB')
-        mask = self.preprocessor.load_mask(os.path.join(self.root, 'segs', img_name))
+        image = Image.open(os.path.join(self.dataset_root, 'images', img_name)).convert('RGB')
+        mask = self.preprocessor.load_mask(os.path.join(self.dataset_root, 'segs', img_name))
         base_name = os.path.splitext(img_name)[0]
-        lms = self.preprocessor.load_lms(os.path.join(self.root, 'lms', f'{base_name}.npy'))
+        lms = self.preprocessor.load_lms(os.path.join(self.dataset_root, 'lms', f'{base_name}.npy'))
         return self.preprocessor.process(image, mask, lms)
     
     def __len__(self):

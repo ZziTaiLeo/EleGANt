@@ -13,7 +13,7 @@ class SingleMakeupDataset(Dataset):
         if config is None:
             config = get_config()
         self.opts = opts
-        self.root = config.DATA.PATH
+        self.dataset_root = self.opts.dataset_root 
         with open(os.path.join('/media/pc/hengda1t/hengda/EleGANt-eg3d/EleGANt/single_input_test', 'single_makeup.txt'), 'r') as f:
             self.makeup_names = [name.strip() for name in f.readlines()]
         with open(os.path.join('/media/pc/hengda1t/hengda/EleGANt-eg3d/EleGANt/single_input_test', 'single_non_makeup.txt'), 'r') as f:
@@ -24,10 +24,10 @@ class SingleMakeupDataset(Dataset):
         self.reference_latens = self.opts.reference_latents
 
     def load_from_file(self, img_name):
-        image = Image.open(os.path.join(self.root, 'images', img_name)).convert('RGB')
-        mask = self.preprocessor.load_mask(os.path.join(self.root, 'segs', img_name))
+        image = Image.open(os.path.join(self.dataset_root, 'images', img_name)).convert('RGB')
+        mask = self.preprocessor.load_mask(os.path.join(self.dataset_root, 'segs', img_name))
         base_name = os.path.splitext(img_name)[0]
-        lms = self.preprocessor.load_lms(os.path.join(self.root, 'lms', f'{base_name}.npy'))
+        lms = self.preprocessor.load_lms(os.path.join(self.dataset_root, 'lms', f'{base_name}.npy'))
         return self.preprocessor.process(image, mask, lms)
     
     def __len__(self):

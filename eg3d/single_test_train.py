@@ -60,6 +60,7 @@ if __name__ == "__main__":
     parser.add_argument('--save_training_data', action='store_true',
                                 help='Save intermediate training data to resume training from the checkpoint')
     parser.add_argument('--sub_exp_dir', default=None, type=str, help='Name of sub experiment directory')
+    parser.add_argument('--dataset_root', default='/media/pc/hengda1t/hengda/datasets/MT-Dataset-crop-origin/', type=str, help='root of your datasets')
     parser.add_argument('--keep_optimizer', action='store_true',
                                 help='Whether to continue from the checkpoint\'s optimizer')
     parser.add_argument('--resume_training_from_ckpt', default=None, type=str,
