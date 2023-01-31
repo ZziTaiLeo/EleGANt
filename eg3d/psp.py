@@ -28,7 +28,7 @@ class pSp(nn.Module):
         self.encoder = self.set_encoder()
         self.device = torch.device(opts.device)
         # self.network_pkl = opts.network_pkl
-        self.network_pkl = '/media/pc/hengda1t/hengda/e4e_eg3d/pretrained_models/ffhq512-128.pkl'
+        self.network_pkl = '/media/psdz/LH-2/workplace/EleGANt/pretrained_models/ffhq512-128.pkl'
 
         # TODO Decoder
         # We need add camera into EG3D

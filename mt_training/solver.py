@@ -198,7 +198,7 @@ class Solver():
         syn_latent = self.syn_latent(latent, r_Image)
         synthesis_img = [self.forward(syn_latent[i, :, :, :], c[i, :].unsqueeze(
             0)) for i in range(self.opts.batch_size)]
-        return torch.stack(synthesis_img, dim=0).squeeze(dim=1)  # (b,c,512,512)
+        return syn_latent, torch.stack(synthesis_img, dim=0).squeeze(dim=1)  # (b,c,512,512)
 
     def rec_img(self, input_img, reference_img, c):
         input_img = self.resize_transformer(input_img)  # (b,c,256,256)
@@ -225,7 +225,6 @@ class Solver():
         fusion.train()
         return net_farl, preprocess_clip, fusion
 
-    # image_r (b,c,h,w)
     def forward(self, s_latent, c):
         s_latent = s_latent.to(self.device).float()
         img = self.G.synthesis(s_latent, c, noise_mode='const')['image']
@@ -284,8 +283,8 @@ class Solver():
                 inversion_B = self.forward(r_latent[0],c_r[0].unsqueeze(0))
         
                 # ================= Generate ================== #
-                fake_A = self.get_syn(s_latent,r_Image,c_s)
-                fake_B = self.get_syn(r_latent,s_Image,c_r)
+                syn_A,fake_A = self.get_syn(s_latent,r_Image,c_s)
+                syn_B,fake_B = self.get_syn(r_latent,s_Image,c_r)
 
                 pgt_A = self.pgt_maker(image_s, image_r, mask_s_full, mask_r_full, lms_s, lms_r)
                 pgt_B = self.pgt_maker(image_r, image_s, mask_r_full, mask_s_full, lms_r, lms_s)
@@ -423,8 +422,8 @@ class Solver():
                     inversion_B = self.forward(r_latent[0],c_r[0].unsqueeze(0))
             
                     # ================= Generate ================== #
-                    fake_A = self.get_syn(s_latent,r_Image,c_s)
-                    fake_B = self.get_syn(r_latent,s_Image,c_r)
+                    syn_A, fake_A = self.get_syn(s_latent,r_Image,c_s)
+                    syn_B, fake_B = self.get_syn(r_latent,s_Image,c_r)
 
                     # generate pseudo ground truth
 
@@ -434,7 +433,7 @@ class Solver():
                         pgt_A = self.pgt_maker(image_s, image_r, mask_s_full, mask_r_full, lms_s, lms_r)
                     except:
                         print('error tps : ','makeup/{}'.format(r_name[0]))
-                        with open('/media/pc/hengda1t/hengda/EleGANt-eg3d/EleGANt/crop_error_img_1.txt','a') as f:
+                        with open('../crop_error_img_1.txt','a') as f:
                             f.write(f'makeup/{r_name[0]}\n')
 
                         torch.cuda.empty_cache()
@@ -443,7 +442,7 @@ class Solver():
                         pgt_B = self.pgt_maker(image_r, image_s, mask_r_full, mask_s_full, lms_r, lms_s)
                     except:
                         print('error tps : ','non-makeup/{}'.format(s_name[0]))
-                        with open('/media/pc/hengda1t/hengda/EleGANt-eg3d/EleGANt/crop_error_img_1.txt','a') as f:
+                        with open('../crop_error_img_1.txt','a') as f:
                             f.write(f'non-makeup/{s_name[0]}\n')
                         
                         torch.cuda.empty_cache()
@@ -501,7 +500,16 @@ class Solver():
                     #cal_loss 
                     g_loss,loss_tmp = self.cal_loss(s_Image,r_Image,image_s,image_r,c_s,c_r,
                     fake_A,fake_B,pgt_A,pgt_B,mask_s_full, mask_r_full,loss_tmp)
-
+                    if self.opts.cal_delta_loss:
+                        # dekta_loss
+                        delta_A = syn_A - s_latent 
+                        delta_B = syn_B - r_latent 
+                        delta_loss_A = torch.norm(delta_A,p=2).mean()
+                        delta_loss_B = torch.norm(delta_B,p=2).mean()
+                        delta_loss = (delta_loss_A+delta_loss_B) * (2e-4) 
+                        g_loss += delta_loss
+                        loss_tmp['delta_loss'] = delta_loss
+                    
                     self.g_optimizer.zero_grad()
                     g_loss.backward()
                     self.g_optimizer.step()

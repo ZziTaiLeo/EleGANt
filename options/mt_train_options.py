@@ -38,7 +38,7 @@ class TrainOptions:
         self.parser.add_argument('--update_param_list', nargs='+', type=str, default=None,
                                  help="Name of training parameters to update the loaded training checkpoint")
         self.parser.add_argument('--network_pkl',default='./pretrained_models/ffhq512-128.pkl',help='path/to/your/eg3d_generator_pkl')
-        self.parser.add_argument('--dataset_json',default='/media/pc/hengda1t/hengda/datasets/MT-Dataset/images/mirror_non_makeup/all_mt_dataset.json',help='path/to/your_no_makeup/dataset.json')
+        self.parser.add_argument('--dataset_json',default='/media/psdz/LH-2/dataset/MT-Dataset/images/mirror_non_makeup/all_mt_dataset.json',help='path/to/your_no_makeup/dataset.json')
         self.parser.add_argument('--source_latents',default='/media/pc/hengda1t/hengda/datasets/latents/non_makeup',help='path/to/your_no_makeup/dataset.json')
         self.parser.add_argument('--reference_latents',default='/media/pc/hengda1t/hengda/datasets/latents/makeup',help='path/to/your_no_makeup/dataset.json')
         self.parser.add_argument('--ckpt',default='../pretrained_models/iteration_500000.pt',help='path/to/your_no_makeup/dataset.json')

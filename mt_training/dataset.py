@@ -15,9 +15,9 @@ class MakeupDataset(Dataset):
         self.opts = opts
         self.dataset_root = self.opts.dataset_root 
         if is_train:
-            with open(os.path.join(self.dataset_root, 'makeup.txt'), 'r') as f:
+            with open(os.path.join('/media/psdz/LH-2/dataset/MT-Dataset-crop', 'makeup.txt'), 'r') as f:
                 self.makeup_names = [name.strip() for name in f.readlines()]
-            with open(os.path.join(self.dataset_root, 'non-makeup.txt'), 'r') as f:
+            with open(os.path.join('/media/psdz/LH-2/dataset/MT-Dataset-crop', 'non-makeup.txt'), 'r') as f:
                 self.non_makeup_names = [name.strip() for name in f.readlines()]
         else:
             with open(os.path.join(self.dataset_root, 'test-makeup.txt'), 'r') as f:

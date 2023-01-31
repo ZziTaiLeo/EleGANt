@@ -50,12 +50,12 @@ if __name__ == "__main__":
                                 help='Whether to continue from the checkpoint\'s optimizer')
 
     # DATA
-    parser.add_argument('--dataset_root', default='/media/pc/hengda1t/hengda/datasets/MT-Dataset-crop/', type=str, help='root of your datasets')
-    parser.add_argument('--dataset_json',default='/media/pc/hengda1t/hengda/datasets/MT-Dataset-crop/all_mt_dataset.json',help='path/to/your_no_makeup/dataset.json')
+    parser.add_argument('--dataset_root', default='/media/psdz/LH-2/dataset/MT-Dataset-crop/', type=str, help='root of your datasets')
+    parser.add_argument('--dataset_json',default='/media/psdz/LH-2/dataset/MT-Dataset-crop/all_mt_dataset.json',help='path/to/your_no_makeup/dataset.json')
     parser.add_argument('--resume_training_from_ckpt', default=None, type=str,
                                 help='Path to training checkpoint, works when --save_training_data was set to True')
-    parser.add_argument('--source_latents',default='/media/pc/hengda1t/hengda/datasets/latents/non-makeup/',help='path/to/your_no_makeup/dataset.json')
-    parser.add_argument('--reference_latents',default='/media/pc/hengda1t/hengda/datasets/latents/makeup/',help='path/to/your_no_makeup/dataset.json')
+    parser.add_argument('--source_latents',default='/media/psdz/LH-2/dataset/latents/non-makeup/',help='path/to/your_no_makeup/dataset.json')
+    parser.add_argument('--reference_latents',default='/media/psdz/LH-2/dataset/latents/makeup/',help='path/to/your_no_makeup/dataset.json')
     #NET
     parser.add_argument('--ckpt',default='../pretrained_models/ft_on_mt_58w.pt',help='path/to/your_no_makeup/dataset.json')
     parser.add_argument('--network_pkl',default='../pretrained_models/ffhq512-128.pkl',help='path/to/your/eg3d_generator_pkl')
@@ -73,6 +73,7 @@ if __name__ == "__main__":
                                 help='Interval for logging metrics to tensorboard')
     parser.add_argument('--val_interval', default=1000, type=int, help='Validation interval')
     parser.add_argument('--save_interval', default=None, type=int, help='Model checkpoint interval')
+    parser.add_argument('--cal_delta_loss', action='store_true',default=False, type=bool help='add delta loss')
     args = parser.parse_args()
     config = get_config()
     
