@@ -1,7 +1,7 @@
 import torchvision.transforms as transforms
 import sys
 sys.path.append('..')
-sys.path.append('/media/pc/hengda1t/hengda/e4e_eg3d/models/')
+sys.path.append('/media/pc/LabServers/hengda/e4e_eg3d/models/')
 from mt_blocks import SimpleSelfCrossTransformer
 import tqdm
 from torch.utils.tensorboard import SummaryWriter
@@ -491,4 +491,3 @@ class MT_Coach():
                     print('OMG!! finished training!')
                     break
                 self.global_step += 1
-latent = torch.randn(1,14,512)

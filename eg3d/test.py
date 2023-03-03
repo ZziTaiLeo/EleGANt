@@ -27,7 +27,7 @@ from PIL import Image
 from utils import common, train_utils
 os.environ['CUDA_LAUNCH_BLOCKING'] = '1'
 
-dataset_json = '/media/pc/hengda1t/hengda/datasets/MT-Dataset-crop/all_mt_dataset.json'
+dataset_json = '/media/pc/LabServers/hengda/datasets/MT-Dataset-crop/all_mt_dataset.json'
 config = get_config()
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 # init psp net
@@ -62,7 +62,7 @@ transform = transforms.Compose([
     transforms.Resize(config.DATA.IMG_SIZE),
     transforms.ToTensor(),
     transforms.Normalize([0.5,0.5,0.5],[0.5,0.5,0.5])])
-model_path = '/media/pc/hengda1t/hengda/EleGANt-eg3d/EleGANt/pretrained_models/shape_predictor_68_face_landmarks.dat'
+model_path = '/media/pc/LabServers/hengda/EleGANt-eg3d/EleGANt/pretrained_models/shape_predictor_68_face_landmarks.dat'
 predictor = dlib.shape_predictor(
 model_path)
 def load_eg3d(network_pkl):
@@ -203,7 +203,6 @@ def vis_train(img_train_batch, name_s,name_r,step=None):
     plt.close(fig)
 # 制作一个输出的图
 def vis_face(img_batch, fig, gs,i,name_s,name_r):
-    print('img_batch:',img_batch)
     plt.imshow(img_batch[0])
     plt.title(f'Input:{name_s}')
     
@@ -223,7 +222,7 @@ def vis_face(img_batch, fig, gs,i,name_s,name_r):
     plt.imshow(img_batch[4])
     plt.title('PGT')
 source_file_path = 'non-makeup/vSYYZ941.png'
-source_img_latent_path ='/media/pc/hengda1t/hengda/datasets/latents/non-makeup/vSYYZ941.pt' 
+source_img_latent_path ='/media/pc/LabServers/hengda/datasets/latents/non-makeup/vSYYZ941.pt' 
 reference_img_path = 'makeup/vRX629_mirror.png'
 
 num_steps =  1000
@@ -278,7 +277,7 @@ D_A = D_A.to(device=device)
 
 # pgt_input maker
 preprocessor = PreProcess(config,need_parser=False)
-PATH_DATA_ROOT = '/media/pc/hengda1t/hengda/datasets/MT-Dataset-crop/'
+PATH_DATA_ROOT = '/media/pc/LabServers/hengda/datasets/MT-Dataset-crop/'
 # source = load_from_file(source_img_path)
 # reference = load_from_file(reference_img_path)
 # image_s,image_r = source[0].unsqueeze(0).to(device), reference[0].unsqueeze(0).to(device)
